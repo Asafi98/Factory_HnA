@@ -1,0 +1,19 @@
+@page "/"
+@namespace HusnaFactory.Pages
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Husna Aijaz Factory</title>
+    <base href="~/" />
+    <link rel="stylesheet" href="css/app.css" />
+    <!-- print.js MUST load before Blazor so JS interop calls never find it undefined -->
+    <script src="/js/print.js"></script>
+</head>
+<body>
+    <component type="typeof(App)" render-mode="Server" />
+    <script src="_framework/blazor.server.js"></script>
+</body>
+</html>

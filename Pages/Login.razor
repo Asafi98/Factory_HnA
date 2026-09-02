@@ -1,0 +1,60 @@
+@page "/login"
+@layout LoginLayout
+@inject FactoryAuthService AuthSvc
+@inject NavigationManager Nav
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-logo">
+            <span style="font-size:48px">🏭</span>
+            <h1>Husna Aijaz Factory</h1>
+            <p>Production Tracking</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(ErrorMsg))
+        {
+            <div class="alert alert-error">@ErrorMsg</div>
+        }
+
+        <div class="form-group">
+            <label>Username</label>
+            <input class="form-control" @bind="Username" @onkeydown="OnKeyDown" placeholder="Enter Username" />
+        </div>
+        <div class="form-group">
+            <label>Password</label>
+            <input type="password" class="form-control" @bind="Password" @onkeydown="OnKeyDown" placeholder="Enter Password" />
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;margin-top:8px"
+                @onclick="DoLogin" disabled="@IsLoading">
+            @if (IsLoading) { <span>Signing in...</span> } else { <span>Sign In</span> }
+        </button>
+    </div>
+</div>
+
+@code {
+    string Username = "", Password = "", ErrorMsg = "";
+    bool IsLoading;
+
+    async Task DoLogin()
+    {
+        if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(Password))
+        {
+            ErrorMsg = "Please enter username and password.";
+            return;
+        }
+        IsLoading = true;
+        ErrorMsg = "";
+        var ok = await AuthSvc.LoginAsync(Username, Password);
+        IsLoading = false;
+        if (ok)
+            Nav.NavigateTo("/", forceLoad: false);
+        else
+            ErrorMsg = "Invalid Username or Password!";
+    }
+
+    async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await DoLogin();
+    }
+}

@@ -1,0 +1,74 @@
+@inherits LayoutComponentBase
+@inject NavigationManager Nav
+@inject FactoryAuthService AuthSvc
+@implements IDisposable
+
+@if (AuthSvc.IsLoggedIn)
+{
+    <div class="pos-shell">
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <span class="brand-icon">🏭</span>
+                <span class="brand-name">Husna Aijaz Factory</span>
+            </div>
+            <ul class="nav-links">
+                @NavItem("/", "📦", "Orders")
+            </ul>
+            <div class="sidebar-footer">
+                <div class="logged-in-user">
+                    <span class="user-avatar">👤</span>
+                    <div class="user-info">
+                        <span class="user-name">@AuthSvc.LoggedInUser</span>
+                        <span class="user-role">Factory Staff</span>
+                    </div>
+                </div>
+                <button class="logout-btn" @onclick="Logout">⏻ Logout</button>
+            </div>
+        </nav>
+        <main class="main-content">@Body</main>
+    </div>
+}
+else
+{
+    <div style="display:none"></div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        AuthSvc.OnAuthChanged += OnAuthStateChanged;
+        if (!AuthSvc.IsLoggedIn)
+        {
+            var current = Nav.ToBaseRelativePath(Nav.Uri);
+            if (!current.Equals("login", StringComparison.OrdinalIgnoreCase))
+                Nav.NavigateTo("/login", forceLoad: false);
+        }
+    }
+
+    void OnAuthStateChanged()
+    {
+        InvokeAsync(() =>
+        {
+            StateHasChanged();
+            if (!AuthSvc.IsLoggedIn)
+                Nav.NavigateTo("/login", forceLoad: false);
+        });
+    }
+
+    public void Dispose() => AuthSvc.OnAuthChanged -= OnAuthStateChanged;
+
+    RenderFragment NavItem(string path, string icon, string label) => builder =>
+    {
+        var current = "/" + Nav.ToBaseRelativePath(Nav.Uri);
+        var isActive = (current == path || (path == "/" && current == "")) ? "active" : "";
+        builder.OpenElement(0, "li");
+        builder.OpenElement(1, "a");
+        builder.AddAttribute(2, "href", path);
+        builder.AddAttribute(3, "class", isActive);
+        builder.AddMarkupContent(4, $"<span>{icon}</span> {label}");
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    void Logout() { AuthSvc.Logout(); Nav.NavigateTo("/login", forceLoad: true); }
+}

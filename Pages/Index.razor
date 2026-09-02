@@ -1,0 +1,391 @@
+@page "/"
+@inject FactoryOrderService OrderSvc
+@inject FactoryMeasurementService MeasureSvc
+@inject FactoryLookupService LookupSvc
+@inject FactoryAuthService AuthSvc
+@inject IJSRuntime JS
+
+<div class="page-header"><h1>🏭 Factory Orders</h1><p>Every stitching order from Malir Cantt and Bukhari, merged in one place</p></div>
+@if (!string.IsNullOrEmpty(Msg)) { <div class="alert @(IsErr?"alert-error":"alert-success")">@Msg</div> }
+
+<div class="tab-bar" style="flex-wrap:wrap">
+    <button class="tab-btn @(StageFilter==""?"active":"")" @onclick="() => SetStageFilter(string.Empty)">All</button>
+    <button class="tab-btn @(StageFilter=="__none"?"active":"")" @onclick='() => SetStageFilter("__none")'>Not Started</button>
+    @foreach (var s in FactoryStages.All)
+    {
+        var st = s;
+        <button class="tab-btn @(StageFilter==st?"active":"")" @onclick="() => SetStageFilter(st)">@st</button>
+    }
+</div>
+
+<div class="card" style="padding:12px;margin-bottom:14px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <input class="form-control" style="flex:1;min-width:180px" placeholder="Search by customer..."
+               value="@Search" @oninput="e => { Search = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }" />
+        <select class="form-control" style="width:180px" @onchange="e => { CategoryFilter = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }">
+            <option value="">All Categories</option>
+            @foreach (var c in Categories) { <option value="@c">@c</option> }
+        </select>
+        <select class="form-control" style="width:200px" @onchange="e => { LocationFilter = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }">
+            <option value="">All Locations</option>
+            @foreach (var o in Outlets) { <option value="@o">@o</option> }
+            <option value="__doorstep">Door Step Sizing</option>
+        </select>
+        <button class="btn-print" @onclick='() => JS.InvokeVoidAsync("printReport","factoryPrintArea")'>🖨️ Print List</button>
+    </div>
+</div>
+
+<div class="card" id="factoryPrintArea"
+     data-report-title="Factory Orders"
+     data-report-period="@DateTime.Today.ToString("dd MMMM yyyy")">
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Stage</th><th>Order#</th><th>Branch</th><th>Customer</th><th>Outlet</th><th>Items</th><th>Trial</th><th>Delivery</th><th class="no-print">Actions</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var ord in Filtered)
+                {
+                    var o = ord;
+                    <tr>
+                        <td>@StageBadge(o.FactoryStage)</td>
+                        <td style="font-weight:600">#@o.OrderId</td>
+                        <td style="font-size:12px;color:#888">@o.BranchLabel@(o.IsDoorstep ? " 🏠" : "")</td>
+                        <td style="font-weight:500">@o.CustomerName</td>
+                        <td>@(o.OutletName ?? "—")</td>
+                        <td style="font-size:12px">@o.ItemsSummary</td>
+                        <td style="font-size:12px">@(o.TrialDate?.ToString("dd MMM") ?? "—")</td>
+                        <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
+                        <td class="no-print" style="white-space:nowrap">
+                            <button class="btn btn-ghost btn-sm" @onclick="() => OpenOrder(o)">View / Print</button>
+                            <select class="form-control" style="width:150px;padding:4px 6px;font-size:12px;display:inline-block;margin-left:4px"
+                                    @onchange="e => UpdateStage(o, e.Value?.ToString() ?? o.FactoryStage ?? FactoryStages.Received)">
+                                <option value="" selected="@(string.IsNullOrEmpty(o.FactoryStage))">— Not Started —</option>
+                                @foreach (var s in FactoryStages.All)
+                                {
+                                    <option value="@s" selected="@(s == o.FactoryStage)">@s</option>
+                                }
+                            </select>
+                        </td>
+                    </tr>
+                }
+                @if (!Filtered.Any()) { <tr><td colspan="9" style="text-align:center;color:#555;padding:24px">No orders found.</td></tr> }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@* ── ORDER DETAIL + PRINT MODAL ── *@
+@if (SelOrder != null)
+{
+    <div class="modal-overlay" @onclick="CloseOrder">
+        <div class="modal-box" style="max-width:720px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h2>Order #@SelOrder.OrderId — @SelOrder.CustomerName</h2>
+                <button class="btn btn-ghost btn-sm" @onclick="CloseOrder">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+                    <div class="info-row"><span class="lbl">Factory Stage</span><span class="val">@StageBadge(SelOrder.FactoryStage)</span></div>
+                    <div class="info-row"><span class="lbl">Shop Status</span><span class="val">@SelOrder.OrderStatus</span></div>
+                    <div class="info-row"><span class="lbl">Branch</span><span class="val">@SelOrder.BranchLabel@(SelOrder.IsDoorstep ? " (Door Step)" : "")</span></div>
+                    <div class="info-row"><span class="lbl">Outlet</span><span class="val">@(SelOrder.OutletName ?? "—")</span></div>
+                    <div class="info-row"><span class="lbl">Trial Date</span><span class="val">@(SelOrder.TrialDate?.ToString("dd MMM yyyy") ?? "—")</span></div>
+                    <div class="info-row"><span class="lbl">Delivery Date</span><span class="val">@(SelOrder.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</span></div>
+                    @if (!string.IsNullOrEmpty(SelOrder.OrderNotes)) {
+                        <div class="info-row" style="grid-column:1/-1"><span class="lbl">Notes</span><span class="val">@SelOrder.OrderNotes</span></div>
+                    }
+                </div>
+
+                <div class="section-divider">Items Ordered</div>
+                @foreach (var item in SelOrder.Items)
+                {
+                    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px">
+                        <span>@item.ProductName</span>
+                        <span style="color:#ffd12c">×@(item.Quantity)</span>
+                    </div>
+                }
+                @if (!SelOrder.Items.Any()) { <p style="color:#555;font-size:13px">No items recorded.</p> }
+
+                <div class="section-divider" style="margin-top:18px">Sizing</div>
+                @if (!AvailableMeasurements.Any())
+                {
+                    <p style="color:#ff9060;font-size:13px">No size has been entered for this customer.</p>
+                }
+                else
+                {
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:6px">
+                        @foreach (var m in AvailableMeasurements)
+                        {
+                            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;padding:7px 10px;background:rgba(255,255,255,0.04);border-radius:6px;border:1px solid @(SelectedMeasurements.Contains(m)?"rgba(255,209,44,0.5)":"rgba(255,255,255,0.07)")">
+                                <input type="checkbox" checked="@SelectedMeasurements.Contains(m)" @onchange="e => ToggleMeasurement(m, (bool)(e.Value ?? false))" />
+                                @m @(Scans.TryGetValue(m, out var sc) && sc != null ? "📎" : "")
+                            </label>
+                        }
+                    </div>
+                }
+
+                <div class="section-divider" style="margin-top:18px">Change Stage</div>
+                <select class="form-control" style="max-width:260px" @onchange="e => UpdateStage(SelOrder, e.Value?.ToString() ?? SelOrder.FactoryStage ?? FactoryStages.Received)">
+                    <option value="" selected="@(string.IsNullOrEmpty(SelOrder.FactoryStage))">— Not Started —</option>
+                    @foreach (var s in FactoryStages.All)
+                    {
+                        <option value="@s" selected="@(s == SelOrder.FactoryStage)">@s — @FactoryStages.Descriptions[s]</option>
+                    }
+                </select>
+
+                <div class="section-divider" style="margin-top:18px">Progress History</div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Stage</th><th>Date &amp; Time</th><th>Changed By</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in History)
+                            {
+                                <tr>
+                                    <td>@StageBadge(h.Stage)</td>
+                                    <td style="font-size:12px">@h.ChangedAt.ToString("dd MMM yyyy, hh:mm tt")</td>
+                                    <td style="font-size:12px;color:#888">@(h.ChangedBy ?? "—")</td>
+                                </tr>
+                            }
+                            @if (!History.Any()) { <tr><td colspan="3" style="text-align:center;color:#555;padding:12px">No history recorded yet.</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+                <button class="btn btn-ghost" @onclick="CloseOrder">Close</button>
+                <button class="btn-print" @onclick="PrintOrder">🖨️ Print Order</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    List<FactoryOrder> AllOrders = new(), Filtered = new();
+    List<string> Categories = new(), Outlets = new();
+    FactoryOrder? SelOrder;
+    List<FactoryStatusHistory> History = new();
+    string Search = "", CategoryFilter = "", LocationFilter = "", StageFilter = "", Msg = "";
+    bool IsErr;
+
+    static readonly string[] GarmentTypes = { "Shirt", "Pant", "Waistcoat", "Shalwar Kameez", "Coat / Sherwani", "2-Piece Suit" };
+
+    List<string> AvailableMeasurements = new();
+    HashSet<string> SelectedMeasurements = new();
+    Dictionary<string, MeasurementScan?> Scans = new();
+
+    ShirtMeasurement? MShirt;
+    PantMeasurement? MPant;
+    WaistcoatMeasurement? MWaistcoat;
+    ShalwarKameezMeasurement? MShalwar;
+    CoatMeasurement? MCoat;
+    Suit2PieceMeasurement? MSuit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Categories = await LookupSvc.GetCategoryNamesAsync();
+        Outlets = await LookupSvc.GetOutletNamesAsync();
+        AllOrders = await OrderSvc.GetAllOrdersAsync();
+        ApplyFilter();
+    }
+
+    void SetStageFilter(string stage) { StageFilter = stage; ApplyFilter(); }
+
+    void ApplyFilter() => Filtered = AllOrders.Where(o =>
+        (StageFilter == "" || (StageFilter == "__none" ? string.IsNullOrEmpty(o.FactoryStage) : o.FactoryStage == StageFilter)) &&
+        (string.IsNullOrEmpty(Search) || o.CustomerName.Contains(Search, StringComparison.OrdinalIgnoreCase)) &&
+        (string.IsNullOrEmpty(CategoryFilter) || o.Categories.Any(c => string.Equals(c, CategoryFilter, StringComparison.OrdinalIgnoreCase))) &&
+        (string.IsNullOrEmpty(LocationFilter) ||
+            (LocationFilter == "__doorstep" ? o.IsDoorstep : o.OutletName == LocationFilter))
+        ).ToList();
+
+    RenderFragment StageBadge(string? stage) => builder =>
+    {
+        if (string.IsNullOrEmpty(stage))
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "badge badge-slate");
+            builder.AddContent(2, "Not Started");
+            builder.CloseElement();
+            return;
+        }
+        var cls = stage switch
+        {
+            FactoryStages.Received        => "badge-warning",
+            FactoryStages.Processing      => "badge-info",
+            FactoryStages.Cutting         => "badge-info",
+            FactoryStages.Stitching       => "badge-info",
+            FactoryStages.CollarFinishing => "badge-info",
+            FactoryStages.Button          => "badge-info",
+            FactoryStages.TrialSent       => "badge-purple",
+            FactoryStages.TrialReceived   => "badge-teal",
+            FactoryStages.PressAndPacking => "badge-teal",
+            FactoryStages.SentToShop      => "badge-success",
+            _ => "badge-info"
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", $"badge {cls}");
+        builder.AddContent(2, stage);
+        builder.CloseElement();
+    };
+
+    async Task OpenOrder(FactoryOrder o)
+    {
+        SelOrder = o;
+        History = await OrderSvc.GetStageHistoryAsync(o.BranchKey, o.OrderId);
+        AvailableMeasurements.Clear();
+        SelectedMeasurements.Clear();
+        Scans.Clear();
+        MShirt = null; MPant = null; MWaistcoat = null; MShalwar = null; MCoat = null; MSuit = null;
+
+        if (o.CustomerId.HasValue)
+        {
+            var cid = o.CustomerId.Value;
+            var branch = o.BranchKey;
+            MShirt     = await MeasureSvc.GetShirtAsync(branch, cid);
+            MPant      = await MeasureSvc.GetPantAsync(branch, cid);
+            MWaistcoat = await MeasureSvc.GetWaistcoatAsync(branch, cid);
+            MShalwar   = await MeasureSvc.GetShalwarKameezAsync(branch, cid);
+            MCoat      = await MeasureSvc.GetCoatAsync(branch, cid, "Coat");
+            MSuit      = await MeasureSvc.GetSuit2PieceAsync(branch, cid);
+
+            foreach (var g in GarmentTypes)
+                Scans[g] = await MeasureSvc.GetScanAsync(branch, cid, g);
+
+            if (MShirt     != null || Scans["Shirt"]           != null) AvailableMeasurements.Add("Shirt");
+            if (MPant      != null || Scans["Pant"]            != null) AvailableMeasurements.Add("Pant");
+            if (MWaistcoat != null || Scans["Waistcoat"]       != null) AvailableMeasurements.Add("Waistcoat");
+            if (MShalwar   != null || Scans["Shalwar Kameez"]  != null) AvailableMeasurements.Add("Shalwar Kameez");
+            if (MCoat      != null || Scans["Coat / Sherwani"] != null) AvailableMeasurements.Add("Coat / Sherwani");
+            if (MSuit      != null || Scans["2-Piece Suit"]    != null) AvailableMeasurements.Add("2-Piece Suit");
+
+            SelectedMeasurements = new HashSet<string>(AvailableMeasurements);
+        }
+    }
+
+    void CloseOrder()
+    {
+        SelOrder = null;
+        History.Clear();
+        AvailableMeasurements.Clear();
+        SelectedMeasurements.Clear();
+        Scans.Clear();
+    }
+
+    void ToggleMeasurement(string name, bool on)
+    {
+        if (on) SelectedMeasurements.Add(name);
+        else    SelectedMeasurements.Remove(name);
+    }
+
+    async Task UpdateStage(FactoryOrder o, string stage)
+    {
+        try
+        {
+            await OrderSvc.UpdateStageAsync(o.BranchKey, o.OrderId, stage, AuthSvc.LoggedInUser);
+            o.FactoryStage = stage;
+            if (FactoryStages.ShopStatusSync.TryGetValue(stage, out var shopStatus))
+                o.OrderStatus = shopStatus;
+            if (SelOrder?.OrderId == o.OrderId && SelOrder.BranchKey == o.BranchKey)
+                History = await OrderSvc.GetStageHistoryAsync(o.BranchKey, o.OrderId);
+            Msg = $"Order #{o.OrderId} → {stage}."; IsErr = false;
+            ApplyFilter();
+        }
+        catch (Exception ex) { Msg = ex.Message; IsErr = true; }
+    }
+
+    async Task PrintOrder()
+    {
+        if (SelOrder == null) return;
+
+        var measureBlocks = BuildMeasurementJson();
+        var itemsJson = System.Text.Json.JsonSerializer.Serialize(
+            SelOrder.Items.Select(i => new { i.ProductName, i.Quantity, Notes = i.ItemNotes ?? "" }));
+
+        await JS.InvokeVoidAsync("printOrderSlip", new
+        {
+            orderId      = SelOrder.OrderId,
+            invoiceId    = SelOrder.InvoiceId,
+            customerName = SelOrder.CustomerName,
+            outlet       = $"{SelOrder.BranchLabel}{(SelOrder.OutletName != null ? " — " + SelOrder.OutletName : "")}",
+            status       = string.IsNullOrEmpty(SelOrder.FactoryStage) ? "Not Started" : SelOrder.FactoryStage,
+            trialDate    = SelOrder.TrialDate?.ToString("dd MMM yyyy") ?? "",
+            deliveryDate = SelOrder.DeliveryDate?.ToString("dd MMM yyyy") ?? "",
+            notes        = SelOrder.OrderNotes ?? "",
+            items        = itemsJson,
+            measurements = measureBlocks
+        });
+    }
+
+    string BuildMeasurementJson()
+    {
+        var blocks = new List<object>();
+
+        (string? scanDataUri, bool scanIsPdf) ScanInfo(string garment) => Scans.TryGetValue(garment, out var s) && s != null
+            ? (s.DataUri, s.IsPdf)
+            : (null, false);
+
+        void AddBlock(string title, string garment, bool hasMeasurement, IEnumerable<(string k, string? v)> rawFields)
+        {
+            var scan = ScanInfo(garment);
+            object[] fields = hasMeasurement
+                ? rawFields.Where(f => !string.IsNullOrWhiteSpace(f.v)).Select(f => (object)new { f.k, f.v }).ToArray()
+                : Array.Empty<object>();
+            blocks.Add(new { title, scan.scanDataUri, scan.scanIsPdf, fields });
+        }
+
+        if (SelectedMeasurements.Contains("Shirt") && (MShirt != null || Scans["Shirt"] != null))
+            AddBlock("Shirt", "Shirt", MShirt != null, MShirt == null ? Array.Empty<(string,string?)>() : new (string,string?)[] {
+                ("Length",MShirt.Length), ("Chest",MShirt.Chest), ("Waist",MShirt.Waist),
+                ("Hips",MShirt.Hips), ("Shoulder",MShirt.Shoulder), ("Sleeve",MShirt.Sleeve),
+                ("Collar",MShirt.Collar), ("Cuff",MShirt.Cuff), ("Comments",MShirt.Comments)
+            });
+
+        if (SelectedMeasurements.Contains("Pant") && (MPant != null || Scans["Pant"] != null))
+            AddBlock("Pant", "Pant", MPant != null, MPant == null ? Array.Empty<(string,string?)>() : new (string,string?)[] {
+                ("Waist",MPant.Waist), ("Hips",MPant.Hips), ("Length",MPant.FLength),
+                ("Inner Length",MPant.InnerLength), ("K Balance",MPant.KBalance), ("Bottom",MPant.Bottom),
+                ("Thigh",MPant.Thigh), ("Fly",MPant.Fly), ("Back Fly",MPant.BFly),
+                ("Seat",MPant.Seat), ("Comments",MPant.Comments)
+            });
+
+        if (SelectedMeasurements.Contains("Waistcoat") && (MWaistcoat != null || Scans["Waistcoat"] != null))
+            AddBlock("Waistcoat", "Waistcoat", MWaistcoat != null, MWaistcoat == null ? Array.Empty<(string,string?)>() : new (string,string?)[] {
+                ("Length",MWaistcoat.Length), ("Chest",MWaistcoat.Chest), ("Waist",MWaistcoat.Waist),
+                ("Hips",MWaistcoat.Hips), ("Shoulder",MWaistcoat.Shoulder),
+                ("Cross Back",MWaistcoat.CrossBack), ("Armhole",MWaistcoat.Armhole),
+                ("Comments",MWaistcoat.Comments)
+            });
+
+        if (SelectedMeasurements.Contains("Shalwar Kameez") && (MShalwar != null || Scans["Shalwar Kameez"] != null))
+            AddBlock("Shalwar Kameez", "Shalwar Kameez", MShalwar != null, MShalwar == null ? Array.Empty<(string,string?)>() : new (string,string?)[] {
+                ("K Length",MShalwar.KLength), ("K Chest",MShalwar.KChest), ("K Waist",MShalwar.KWaist),
+                ("K Hips",MShalwar.KHips), ("K Shoulder",MShalwar.KShoulder), ("K Sleeve",MShalwar.KSleeve),
+                ("K Collar",MShalwar.KCollar), ("K Daman",MShalwar.KDaman),
+                ("S Length",MShalwar.SLength), ("S Waist",MShalwar.SWaist), ("S Hips",MShalwar.SHips),
+                ("S Bottom",MShalwar.SBottom), ("S Thigh",MShalwar.SThigh),
+                ("Comments",MShalwar.Comments)
+            });
+
+        if (SelectedMeasurements.Contains("Coat / Sherwani") && (MCoat != null || Scans["Coat / Sherwani"] != null))
+            AddBlock("Coat / Sherwani", "Coat / Sherwani", MCoat != null, MCoat == null ? Array.Empty<(string,string?)>() : new (string,string?)[] {
+                ("Type",MCoat.CoatType), ("Length",MCoat.Length), ("Chest",MCoat.Chest),
+                ("Waist",MCoat.Waist), ("Hips",MCoat.Hips), ("Shoulder",MCoat.Shoulder),
+                ("Sleeve",MCoat.Sleeve), ("Back Length",MCoat.BackLength),
+                ("Cross Back",MCoat.CrossBack), ("Armhole",MCoat.Armhole),
+                ("Collar",MCoat.Collar), ("Lapel",MCoat.Lapel), ("Comments",MCoat.Comments)
+            });
+
+        if (SelectedMeasurements.Contains("2-Piece Suit") && (MSuit != null || Scans["2-Piece Suit"] != null))
+            AddBlock("2-Piece Suit", "2-Piece Suit", MSuit != null, MSuit == null ? Array.Empty<(string,string?)>() : new (string,string?)[] {
+                ("J Length",MSuit.JLength), ("J Chest",MSuit.JChest), ("J Waist",MSuit.JWaist),
+                ("J Hips",MSuit.JHips), ("J Shoulder",MSuit.JShoulder), ("J Sleeve",MSuit.JSleeve),
+                ("J Back Length",MSuit.JBackLength), ("J Cross Back",MSuit.JCrossBack),
+                ("T Waist",MSuit.TWaist), ("T Hips",MSuit.THips), ("T Length",MSuit.TLength),
+                ("T Inner Length",MSuit.TInnerLength), ("T Thigh",MSuit.TThigh),
+                ("T Bottom",MSuit.TBottom), ("Comments",MSuit.Comments)
+            });
+
+        return System.Text.Json.JsonSerializer.Serialize(blocks);
+    }
+}

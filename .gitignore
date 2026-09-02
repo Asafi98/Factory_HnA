@@ -1,0 +1,15 @@
+## .NET build output
+bin/
+obj/
+
+## Secrets — never commit real connection strings
+appsettings.Development.json
+appsettings.*.local.json
+*.pfx
+
+## IDE / OS
+.vs/
+.vscode/
+*.user
+.DS_Store
+Thumbs.db

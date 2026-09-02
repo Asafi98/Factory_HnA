@@ -1,0 +1,26 @@
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using HusnaFactory.Shared
+
+<ErrorBoundary>
+    <ChildContent>
+        <Router AppAssembly="@typeof(App).Assembly">
+            <Found Context="routeData">
+                <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+                <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            </Found>
+            <NotFound>
+                <LayoutView Layout="@typeof(MainLayout)">
+                    <p style="color:#888;padding:40px;text-align:center">Page not found.</p>
+                </LayoutView>
+            </NotFound>
+        </Router>
+    </ChildContent>
+    <ErrorContent Context="ex">
+        <div style="padding:40px;text-align:center;color:#ff6060">
+            <h2>Something went wrong</h2>
+            <p style="color:#888;font-size:13px">@ex.Message</p>
+            <a href="/" style="color:#ffd12c">← Go to Orders</a>
+        </div>
+    </ErrorContent>
+</ErrorBoundary>
