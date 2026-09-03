@@ -1,0 +1,13 @@
+@* Shared/MeasureField.razor — Reusable measurement input *@
+<div class="form-group">
+    <label>@Label</label>
+    <input class="form-control" value="@Value"
+           @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString())"
+           placeholder="—" />
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+}

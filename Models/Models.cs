@@ -124,6 +124,19 @@ public class Outlet
     public string OutletName { get; set; } = "";
 }
 
+// Customer identity + contact info only — deliberately excludes balance, payments,
+// and order totals so factory staff can look up a person and their sizing without
+// seeing any financial data.
+public class FactoryCustomer
+{
+    public string BranchKey { get; set; } = "";
+    public string BranchLabel { get; set; } = "";
+    public int CustomerId { get; set; }
+    public string CustomerName { get; set; } = "";
+    public string? CustomerPhone { get; set; }
+    public string? CustomerAddress { get; set; }
+}
+
 // ─────────────────────────────────────────
 //  Measurement models — read-only mirror of the POS's schema, used to show
 //  "sizing of that person" on an order, or "No size has been entered" if absent.

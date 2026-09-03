@@ -1,0 +1,306 @@
+@page "/customers"
+@inject FactoryCustomerService CustomerSvc
+@inject FactoryMeasurementService MeasureSvc
+@inject FactoryAuthService AuthSvc
+
+<div class="page-header">
+    <h1>👥 Customers</h1>
+    <p>Look up a customer's sizing and update it hand-to-hand — no payment or order amounts shown here</p>
+</div>
+@if (!string.IsNullOrEmpty(Msg)) { <div class="alert @(IsErr?"alert-error":"alert-success")">@Msg</div> }
+
+<div class="card" style="padding:12px;margin-bottom:14px">
+    <input class="form-control" style="max-width:400px" placeholder="Search customer by name or phone..."
+           value="@Search" @oninput="OnSearch" />
+
+    @if (Results.Any())
+    {
+        <div class="table-wrap" style="margin-top:10px">
+            <table>
+                <thead><tr><th>Name</th><th>Phone</th><th>Branch</th><th></th></tr></thead>
+                <tbody>
+                    @foreach (var c in Results)
+                    {
+                        var cc = c;
+                        <tr>
+                            <td style="font-weight:500">@cc.CustomerName</td>
+                            <td>@(cc.CustomerPhone ?? "—")</td>
+                            <td style="font-size:12px;color:#888">@cc.BranchLabel</td>
+                            <td><button class="btn btn-ghost btn-sm" @onclick="() => SelectCustomer(cc)">View / Edit Sizing</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else if (Search.Length >= 2 && !Searching)
+    {
+        <div style="margin-top:10px;color:#888;font-size:13px">No customers found.</div>
+    }
+</div>
+
+@if (SelCustomer != null)
+{
+    <div style="margin-bottom:10px;color:#ffd12c;font-size:13px">
+        ✓ @SelCustomer.CustomerName | @(SelCustomer.CustomerPhone ?? "—") | @SelCustomer.BranchLabel
+        @if (!string.IsNullOrWhiteSpace(SelCustomer.CustomerAddress)) { <span> | @SelCustomer.CustomerAddress</span> }
+    </div>
+
+    <div class="tab-bar" style="flex-wrap:wrap">
+        <button class="tab-btn @(Tab==0?"active":"")" @onclick="()=>Tab=0">Shirt</button>
+        <button class="tab-btn @(Tab==1?"active":"")" @onclick="()=>Tab=1">Pant</button>
+        <button class="tab-btn @(Tab==2?"active":"")" @onclick="()=>Tab=2">Waistcoat</button>
+        <button class="tab-btn @(Tab==3?"active":"")" @onclick="()=>Tab=3">Shalwar Kameez</button>
+        <button class="tab-btn @(Tab==4?"active":"")" @onclick="()=>Tab=4">Coat / Sherwani / Blazer</button>
+        <button class="tab-btn @(Tab==5?"active":"")" @onclick="()=>Tab=5">2-Piece Suit</button>
+    </div>
+
+    <!-- SHIRT -->
+    @if (Tab==0 && Shirt!=null)
+    {
+        <div class="card">
+            <span class="card-title">Shirt — @SelCustomer.CustomerName</span>
+            @ScanPreview(Scans.GetValueOrDefault(GShirt))
+            <div class="form-row cols-4">
+                <MeasureField Label="Length"   @bind-Value="Shirt.Length"   />
+                <MeasureField Label="Chest"    @bind-Value="Shirt.Chest"    />
+                <MeasureField Label="Waist"    @bind-Value="Shirt.Waist"    />
+                <MeasureField Label="Hips"     @bind-Value="Shirt.Hips"     />
+                <MeasureField Label="Shoulder" @bind-Value="Shirt.Shoulder" />
+                <MeasureField Label="Sleeve"   @bind-Value="Shirt.Sleeve"   />
+                <MeasureField Label="Collar"   @bind-Value="Shirt.Collar"   />
+                <MeasureField Label="Cuff"     @bind-Value="Shirt.Cuff"     />
+            </div>
+            <div class="form-group"><label>Comments</label><textarea class="form-control" rows="2" @bind="Shirt.Comments"></textarea></div>
+            <div class="btn-row"><button class="btn btn-primary" @onclick="SaveShirt">Save Shirt</button></div>
+        </div>
+    }
+
+    <!-- PANT -->
+    @if (Tab==1 && Pant!=null)
+    {
+        <div class="card">
+            <span class="card-title">Pant — @SelCustomer.CustomerName</span>
+            @ScanPreview(Scans.GetValueOrDefault(GPant))
+            <div class="form-row cols-4">
+                <MeasureField Label="Waist"        @bind-Value="Pant.Waist"       />
+                <MeasureField Label="Hips"         @bind-Value="Pant.Hips"        />
+                <MeasureField Label="Front Length" @bind-Value="Pant.FLength"     />
+                <MeasureField Label="Inner Length" @bind-Value="Pant.InnerLength" />
+                <MeasureField Label="K. Balance"   @bind-Value="Pant.KBalance"    />
+                <MeasureField Label="Bottom"       @bind-Value="Pant.Bottom"      />
+                <MeasureField Label="Thigh"        @bind-Value="Pant.Thigh"       />
+                <MeasureField Label="Fly"          @bind-Value="Pant.Fly"         />
+                <MeasureField Label="Back Fly"     @bind-Value="Pant.BFly"        />
+                <MeasureField Label="Seat"         @bind-Value="Pant.Seat"        />
+            </div>
+            <div class="form-group"><label>Comments</label><textarea class="form-control" rows="2" @bind="Pant.Comments"></textarea></div>
+            <div class="btn-row"><button class="btn btn-primary" @onclick="SavePant">Save Pant</button></div>
+        </div>
+    }
+
+    <!-- WAISTCOAT -->
+    @if (Tab==2 && Wc!=null)
+    {
+        <div class="card">
+            <span class="card-title">Waistcoat — @SelCustomer.CustomerName</span>
+            @ScanPreview(Scans.GetValueOrDefault(GWaistcoat))
+            <div class="form-row cols-4">
+                <MeasureField Label="Length"     @bind-Value="Wc.Length"    />
+                <MeasureField Label="Chest"      @bind-Value="Wc.Chest"     />
+                <MeasureField Label="Waist"      @bind-Value="Wc.Waist"     />
+                <MeasureField Label="Hips"       @bind-Value="Wc.Hips"      />
+                <MeasureField Label="Shoulder"   @bind-Value="Wc.Shoulder"  />
+                <MeasureField Label="Cross Back" @bind-Value="Wc.CrossBack" />
+                <MeasureField Label="Armhole"    @bind-Value="Wc.Armhole"   />
+            </div>
+            <div class="form-group"><label>Comments</label><textarea class="form-control" rows="2" @bind="Wc.Comments"></textarea></div>
+            <div class="btn-row"><button class="btn btn-primary" @onclick="SaveWc">Save Waistcoat</button></div>
+        </div>
+    }
+
+    <!-- SHALWAR KAMEEZ -->
+    @if (Tab==3 && SK!=null)
+    {
+        <div class="card">
+            <span class="card-title">Shalwar Kameez — @SelCustomer.CustomerName</span>
+            @ScanPreview(Scans.GetValueOrDefault(GShalwarKameez))
+            <div class="section-divider">Kameez</div>
+            <div class="form-row cols-4">
+                <MeasureField Label="Length"   @bind-Value="SK.KLength"   />
+                <MeasureField Label="Chest"    @bind-Value="SK.KChest"    />
+                <MeasureField Label="Waist"    @bind-Value="SK.KWaist"    />
+                <MeasureField Label="Hips"     @bind-Value="SK.KHips"     />
+                <MeasureField Label="Shoulder" @bind-Value="SK.KShoulder" />
+                <MeasureField Label="Sleeve"   @bind-Value="SK.KSleeve"   />
+                <MeasureField Label="Collar"   @bind-Value="SK.KCollar"   />
+                <MeasureField Label="Daman"    @bind-Value="SK.KDaman"    />
+            </div>
+            <div class="section-divider">Shalwar</div>
+            <div class="form-row cols-4">
+                <MeasureField Label="Length" @bind-Value="SK.SLength" />
+                <MeasureField Label="Waist"  @bind-Value="SK.SWaist"  />
+                <MeasureField Label="Hips"   @bind-Value="SK.SHips"   />
+                <MeasureField Label="Bottom" @bind-Value="SK.SBottom" />
+                <MeasureField Label="Thigh"  @bind-Value="SK.SThigh"  />
+            </div>
+            <div class="form-group"><label>Comments</label><textarea class="form-control" rows="2" @bind="SK.Comments"></textarea></div>
+            <div class="btn-row"><button class="btn btn-primary" @onclick="SaveSK">Save Shalwar Kameez</button></div>
+        </div>
+    }
+
+    <!-- COAT -->
+    @if (Tab==4 && Coat!=null)
+    {
+        <div class="card">
+            <span class="card-title">@Coat.CoatType — @SelCustomer.CustomerName</span>
+            <div class="form-group" style="max-width:200px;margin-bottom:14px">
+                <label>Garment Type</label>
+                <select class="form-control" @bind="Coat.CoatType" @bind:after="LoadCoat">
+                    <option>Coat</option><option>Sherwani</option><option>Blazer</option><option>2-Piece Jacket</option>
+                </select>
+            </div>
+            @ScanPreview(Scans.GetValueOrDefault(GCoat))
+            <div class="form-row cols-4">
+                <MeasureField Label="Length"      @bind-Value="Coat.Length"     />
+                <MeasureField Label="Chest"       @bind-Value="Coat.Chest"      />
+                <MeasureField Label="Waist"       @bind-Value="Coat.Waist"      />
+                <MeasureField Label="Hips"        @bind-Value="Coat.Hips"       />
+                <MeasureField Label="Shoulder"    @bind-Value="Coat.Shoulder"   />
+                <MeasureField Label="Sleeve"      @bind-Value="Coat.Sleeve"     />
+                <MeasureField Label="Back Length" @bind-Value="Coat.BackLength" />
+                <MeasureField Label="Cross Back"  @bind-Value="Coat.CrossBack"  />
+                <MeasureField Label="Armhole"     @bind-Value="Coat.Armhole"    />
+                <MeasureField Label="Collar"      @bind-Value="Coat.Collar"     />
+                <MeasureField Label="Lapel"       @bind-Value="Coat.Lapel"      />
+            </div>
+            <div class="form-group"><label>Comments</label><textarea class="form-control" rows="2" @bind="Coat.Comments"></textarea></div>
+            <div class="btn-row"><button class="btn btn-primary" @onclick="SaveCoat">Save @Coat.CoatType</button></div>
+        </div>
+    }
+
+    <!-- 2-PIECE SUIT -->
+    @if (Tab==5 && Suit!=null)
+    {
+        <div class="card">
+            <span class="card-title">2-Piece Suit — @SelCustomer.CustomerName</span>
+            @ScanPreview(Scans.GetValueOrDefault(GSuit2Piece))
+            <div class="section-divider">Jacket</div>
+            <div class="form-row cols-4">
+                <MeasureField Label="Length"      @bind-Value="Suit.JLength"     />
+                <MeasureField Label="Chest"       @bind-Value="Suit.JChest"      />
+                <MeasureField Label="Waist"       @bind-Value="Suit.JWaist"      />
+                <MeasureField Label="Hips"        @bind-Value="Suit.JHips"       />
+                <MeasureField Label="Shoulder"    @bind-Value="Suit.JShoulder"   />
+                <MeasureField Label="Sleeve"      @bind-Value="Suit.JSleeve"     />
+                <MeasureField Label="Back Length" @bind-Value="Suit.JBackLength" />
+                <MeasureField Label="Cross Back"  @bind-Value="Suit.JCrossBack"  />
+            </div>
+            <div class="section-divider">Trouser</div>
+            <div class="form-row cols-4">
+                <MeasureField Label="Waist"        @bind-Value="Suit.TWaist"       />
+                <MeasureField Label="Hips"         @bind-Value="Suit.THips"        />
+                <MeasureField Label="Length"       @bind-Value="Suit.TLength"      />
+                <MeasureField Label="Inner Length" @bind-Value="Suit.TInnerLength" />
+                <MeasureField Label="Thigh"        @bind-Value="Suit.TThigh"       />
+                <MeasureField Label="Bottom"       @bind-Value="Suit.TBottom"      />
+            </div>
+            <div class="form-group"><label>Comments</label><textarea class="form-control" rows="2" @bind="Suit.Comments"></textarea></div>
+            <div class="btn-row"><button class="btn btn-primary" @onclick="SaveSuit">Save 2-Piece Suit</button></div>
+        </div>
+    }
+}
+
+@code {
+    // Canonical garment-type keys — must match the keys the POS app uses when
+    // saving scans, so a scan uploaded on either side shows up here.
+    const string GShirt = "Shirt", GPant = "Pant", GWaistcoat = "Waistcoat",
+                 GShalwarKameez = "Shalwar Kameez", GCoat = "Coat / Sherwani", GSuit2Piece = "2-Piece Suit";
+    static readonly string[] AllGarmentTypes = { GShirt, GPant, GWaistcoat, GShalwarKameez, GCoat, GSuit2Piece };
+
+    string Search = "", Msg = ""; bool IsErr, Searching;
+    List<FactoryCustomer> Results = new();
+    readonly Debouncer _searchDebounce = new();
+    FactoryCustomer? SelCustomer;
+    int Tab;
+    Dictionary<string, MeasurementScan?> Scans = new();
+
+    ShirtMeasurement? Shirt;
+    PantMeasurement? Pant;
+    WaistcoatMeasurement? Wc;
+    ShalwarKameezMeasurement? SK;
+    CoatMeasurement? Coat;
+    Suit2PieceMeasurement? Suit;
+
+    async Task OnSearch(ChangeEventArgs e)
+    {
+        Search = e.Value?.ToString() ?? "";
+        Searching = true;
+        await _searchDebounce.DebounceAsync(async () =>
+        {
+            Results = Search.Length >= 2 ? await CustomerSvc.SearchAsync(Search) : new();
+            Searching = false;
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    async Task SelectCustomer(FactoryCustomer c)
+    {
+        SelCustomer = c; Results.Clear(); Search = c.CustomerName;
+        await LoadAll();
+    }
+
+    async Task LoadAll()
+    {
+        if (SelCustomer == null) return;
+        var branch = SelCustomer.BranchKey;
+        var id = SelCustomer.CustomerId;
+
+        Shirt = await MeasureSvc.GetShirtAsync(branch, id) ?? new ShirtMeasurement { CustomerId = id };
+        Pant = await MeasureSvc.GetPantAsync(branch, id) ?? new PantMeasurement { CustomerId = id };
+        Wc = await MeasureSvc.GetWaistcoatAsync(branch, id) ?? new WaistcoatMeasurement { CustomerId = id };
+        SK = await MeasureSvc.GetShalwarKameezAsync(branch, id) ?? new ShalwarKameezMeasurement { CustomerId = id };
+        Coat = await MeasureSvc.GetCoatAsync(branch, id, "Coat") ?? new CoatMeasurement { CustomerId = id, CoatType = "Coat" };
+        Suit = await MeasureSvc.GetSuit2PieceAsync(branch, id) ?? new Suit2PieceMeasurement { CustomerId = id };
+
+        foreach (var g in AllGarmentTypes)
+            Scans[g] = await MeasureSvc.GetScanAsync(branch, id, g);
+    }
+
+    async Task LoadCoat()
+    {
+        if (SelCustomer == null || Coat == null) return;
+        Coat = await MeasureSvc.GetCoatAsync(SelCustomer.BranchKey, SelCustomer.CustomerId, Coat.CoatType)
+               ?? new CoatMeasurement { CustomerId = SelCustomer.CustomerId, CoatType = Coat.CoatType };
+    }
+
+    RenderFragment ScanPreview(MeasurementScan? scan) => builder =>
+    {
+        if (scan == null) return;
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "style", "margin-bottom:14px");
+        if (scan.IsPdf)
+        {
+            builder.OpenElement(2, "embed");
+            builder.AddAttribute(3, "src", scan.DataUri);
+            builder.AddAttribute(4, "type", "application/pdf");
+            builder.AddAttribute(5, "style", "width:100%;height:320px;border-radius:6px;border:1px solid rgba(255,255,255,0.15)");
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(2, "img");
+            builder.AddAttribute(3, "src", scan.DataUri);
+            builder.AddAttribute(4, "style", "max-width:100%;max-height:320px;border-radius:6px;border:1px solid rgba(255,255,255,0.15)");
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+    };
+
+    async Task SaveShirt() { try { await MeasureSvc.SaveShirtAsync(SelCustomer!.BranchKey, Shirt!); Msg = "Shirt saved."; IsErr = false; } catch (Exception ex) { Msg = ex.Message; IsErr = true; } }
+    async Task SavePant() { try { await MeasureSvc.SavePantAsync(SelCustomer!.BranchKey, Pant!); Msg = "Pant saved."; IsErr = false; } catch (Exception ex) { Msg = ex.Message; IsErr = true; } }
+    async Task SaveWc() { try { await MeasureSvc.SaveWaistcoatAsync(SelCustomer!.BranchKey, Wc!); Msg = "Waistcoat saved."; IsErr = false; } catch (Exception ex) { Msg = ex.Message; IsErr = true; } }
+    async Task SaveSK() { try { await MeasureSvc.SaveShalwarKameezAsync(SelCustomer!.BranchKey, SK!); Msg = "Shalwar Kameez saved."; IsErr = false; } catch (Exception ex) { Msg = ex.Message; IsErr = true; } }
+    async Task SaveCoat() { try { await MeasureSvc.SaveCoatAsync(SelCustomer!.BranchKey, Coat!); Msg = $"{Coat!.CoatType} saved."; IsErr = false; } catch (Exception ex) { Msg = ex.Message; IsErr = true; } }
+    async Task SaveSuit() { try { await MeasureSvc.SaveSuit2PieceAsync(SelCustomer!.BranchKey, Suit!); Msg = "2-Piece Suit saved."; IsErr = false; } catch (Exception ex) { Msg = ex.Message; IsErr = true; } }
+}

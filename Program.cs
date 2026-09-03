@@ -37,6 +37,7 @@ builder.Services.AddScoped<FactoryAuthService>();
 builder.Services.AddScoped<FactoryOrderService>();
 builder.Services.AddScoped<FactoryMeasurementService>();
 builder.Services.AddScoped<FactoryLookupService>();
+builder.Services.AddScoped<FactoryCustomerService>();
 
 var app = builder.Build();
 
