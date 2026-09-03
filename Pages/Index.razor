@@ -48,10 +48,8 @@
                 {
                     var o = ord;
                     var rowItems = o.Items.Any() ? o.Items : new List<FactoryOrderItem> { new() { ProductName = "—" } };
-                    var isFirstRow = true;
                     foreach (var item in rowItems)
                     {
-                        var showActions = isFirstRow;
                         <tr>
                             <td>@StageBadge(o.FactoryStage)</td>
                             <td style="font-weight:600">#@o.OrderId</td>
@@ -63,21 +61,17 @@
                             <td style="font-size:12px">@(o.TrialDate?.ToString("dd MMM") ?? "—")</td>
                             <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
                             <td class="no-print" style="white-space:nowrap">
-                                @if (showActions)
-                                {
-                                    <button class="btn btn-ghost btn-sm" @onclick="() => OpenOrder(o)">View / Print</button>
-                                    <select class="form-control" style="width:150px;padding:4px 6px;font-size:12px;display:inline-block;margin-left:4px"
-                                            @onchange="e => UpdateStage(o, e.Value?.ToString() ?? o.FactoryStage ?? FactoryStages.Received)">
-                                        <option value="" selected="@(string.IsNullOrEmpty(o.FactoryStage))">— Not Started —</option>
-                                        @foreach (var s in FactoryStages.All)
-                                        {
-                                            <option value="@s" selected="@(s == o.FactoryStage)">@s</option>
-                                        }
-                                    </select>
-                                }
+                                <button class="btn btn-ghost btn-sm" @onclick="() => OpenOrder(o)">View / Print</button>
+                                <select class="form-control" style="width:150px;padding:4px 6px;font-size:12px;display:inline-block;margin-left:4px"
+                                        @onchange="e => UpdateStage(o, e.Value?.ToString() ?? o.FactoryStage ?? FactoryStages.Received)">
+                                    <option value="" selected="@(string.IsNullOrEmpty(o.FactoryStage))">— Not Started —</option>
+                                    @foreach (var s in FactoryStages.All)
+                                    {
+                                        <option value="@s" selected="@(s == o.FactoryStage)">@s</option>
+                                    }
+                                </select>
                             </td>
                         </tr>
-                        isFirstRow = false;
                     }
                 }
                 @if (!Filtered.Any()) { <tr><td colspan="10" style="text-align:center;color:#555;padding:24px">No orders found.</td></tr> }
