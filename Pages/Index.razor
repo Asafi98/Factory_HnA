@@ -148,7 +148,7 @@
                             {
                                 <tr>
                                     <td>@StageBadge(h.Stage)</td>
-                                    <td style="font-size:12px">@h.ChangedAt.ToString("dd MMM yyyy, hh:mm tt")</td>
+                                    <td style="font-size:12px">@ToPkt(h.ChangedAt).ToString("dd MMM yyyy, hh:mm tt")</td>
                                     <td style="font-size:12px;color:#888">@(h.ChangedBy ?? "—")</td>
                                 </tr>
                             }
@@ -166,6 +166,10 @@
 }
 
 @code {
+    // The database stores timestamps in UTC (MySQL's default); Pakistan is a fixed
+    // UTC+5 with no daylight saving, so a flat offset is correct year-round.
+    static DateTime ToPkt(DateTime utc) => utc.AddHours(5);
+
     List<FactoryOrder> AllOrders = new(), Filtered = new();
     List<string> Categories = new(), Outlets = new();
     FactoryOrder? SelOrder;
