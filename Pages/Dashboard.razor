@@ -1,0 +1,325 @@
+@page "/dashboard"
+@inject FactoryOrderService OrderSvc
+@inject FactoryAuthService AuthSvc
+
+<div class="page-header">
+    <h1>📊 Morning Briefing</h1>
+    <p>@DateTime.Today.ToString("dddd, dd MMMM yyyy") — Factory at a glance</p>
+</div>
+
+@if (Loading)
+{
+    <p style="color:#888;padding:20px 0">Loading dashboard...</p>
+}
+else
+{
+    <!-- Stat cards -->
+    <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
+        <div class="stat-card orange">
+            <span class="stat-label">Today's Trials</span>
+            <span class="stat-value">@TodaysTrials.Count</span>
+            <span class="stat-sub">Scheduled today</span>
+        </div>
+        <div class="stat-card blue">
+            <span class="stat-label">Due This Week</span>
+            <span class="stat-value">@DueThisWeek.Count</span>
+            <span class="stat-sub">Next 7 days</span>
+        </div>
+        <div class="stat-card red">
+            <span class="stat-label">Overdue</span>
+            <span class="stat-value">@OverdueOrders.Count</span>
+            <span class="stat-sub">Past delivery date</span>
+        </div>
+        <div class="stat-card red">
+            <span class="stat-label">Stuck 3+ Days</span>
+            <span class="stat-value">@StuckOrders.Count</span>
+            <span class="stat-sub">No stage change</span>
+        </div>
+        <div class="stat-card green">
+            <span class="stat-label">Active Orders</span>
+            <span class="stat-value">@ActiveOrders.Count</span>
+            <span class="stat-sub">Not delivered/cancelled</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Avg Turnaround</span>
+            <span class="stat-value">@(StageAverages.Any() ? $"{StageAverages.Sum(s => s.AvgDays):F1}d" : "—")</span>
+            <span class="stat-sub">Received → Sent to Shop</span>
+        </div>
+    </div>
+
+    <!-- Today's Trials -->
+    @if (TodaysTrials.Any())
+    {
+        <div class="card" style="border-left:3px solid #ffa028">
+            <span class="card-title">Today's Trials (@TodaysTrials.Count)</span>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Order#</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Stage</th><th>Items</th></tr></thead>
+                    <tbody>
+                        @foreach (var o in TodaysTrials)
+                        {
+                            <tr>
+                                <td style="font-weight:600">#@o.OrderId</td>
+                                <td style="font-weight:500">@o.CustomerName</td>
+                                <td style="font-size:12px">@(o.CustomerPhone ?? "—")</td>
+                                <td style="font-size:12px;color:#888">@o.BranchLabel</td>
+                                <td>@StageBadge(o.FactoryStage)</td>
+                                <td style="font-size:12px">@o.ItemsSummary</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <!-- Overdue Deliveries -->
+    @if (OverdueOrders.Any())
+    {
+        <div class="card" style="border-left:3px solid #ff4040">
+            <span class="card-title" style="color:#ff6060">Overdue Deliveries (@OverdueOrders.Count)</span>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Order#</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Stage</th><th>Delivery</th><th>Overdue</th></tr></thead>
+                    <tbody>
+                        @foreach (var o in OverdueOrders.OrderByDescending(x => x.DaysOverdue))
+                        {
+                            <tr>
+                                <td style="font-weight:600">#@o.OrderId</td>
+                                <td style="font-weight:500">@o.CustomerName</td>
+                                <td style="font-size:12px">@(o.CustomerPhone ?? "—")</td>
+                                <td style="font-size:12px;color:#888">@o.BranchLabel</td>
+                                <td>@StageBadge(o.FactoryStage)</td>
+                                <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
+                                <td><span class="badge badge-danger">@(o.DaysOverdue) days</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <!-- Stuck in Factory -->
+    @if (StuckOrders.Any())
+    {
+        <div class="card" style="border-left:3px solid #ffa028">
+            <span class="card-title" style="color:#ffa028">Stuck in Factory (@StuckOrders.Count)</span>
+            <p style="font-size:12px;color:#888;margin:0 0 10px">Orders with no stage change for 3+ days</p>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Order#</th><th>Customer</th><th>Branch</th><th>Stage</th><th>Last Activity</th><th>Idle</th></tr></thead>
+                    <tbody>
+                        @foreach (var o in StuckOrders.OrderByDescending(x => x.DaysStuck))
+                        {
+                            <tr>
+                                <td style="font-weight:600">#@o.OrderId</td>
+                                <td style="font-weight:500">@o.CustomerName</td>
+                                <td style="font-size:12px;color:#888">@o.BranchLabel</td>
+                                <td>@StageBadge(o.FactoryStage)</td>
+                                <td style="font-size:12px">@((o.LastStageChangeAt ?? o.CreatedAt).ToString("dd MMM yyyy"))</td>
+                                <td><span class="badge badge-warning">@(o.DaysStuck) days</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <!-- Due This Week -->
+    @if (DueThisWeek.Any())
+    {
+        <div class="card">
+            <span class="card-title">Due This Week (@DueThisWeek.Count)</span>
+            <div class="table-wrap">
+                <table>
+                    <thead><tr><th>Order#</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Stage</th><th>Delivery</th><th>Days Left</th></tr></thead>
+                    <tbody>
+                        @foreach (var o in DueThisWeek.OrderBy(x => x.DeliveryDate))
+                        {
+                            var daysLeft = (o.DeliveryDate!.Value.Date - DateTime.Today).Days;
+                            <tr>
+                                <td style="font-weight:600">#@o.OrderId</td>
+                                <td style="font-weight:500">@o.CustomerName</td>
+                                <td style="font-size:12px">@(o.CustomerPhone ?? "—")</td>
+                                <td style="font-size:12px;color:#888">@o.BranchLabel</td>
+                                <td>@StageBadge(o.FactoryStage)</td>
+                                <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy"))</td>
+                                <td>
+                                    @if (daysLeft <= 1) { <span class="badge badge-danger">@daysLeft day(s)</span> }
+                                    else if (daysLeft <= 3) { <span class="badge badge-warning">@daysLeft days</span> }
+                                    else { <span class="badge badge-info">@daysLeft days</span> }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <!-- Stage Distribution -->
+    <div class="card">
+        <span class="card-title">Stage Distribution</span>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+            @{
+                var notStarted = ActiveOrders.Count(o => string.IsNullOrEmpty(o.FactoryStage));
+                if (notStarted > 0)
+                {
+                    <div style="flex:1;min-width:100px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:8px;border:1px solid rgba(255,255,255,0.08);text-align:center">
+                        <div style="font-size:22px;font-weight:700;color:#888">@notStarted</div>
+                        <div style="font-size:11px;color:#666;margin-top:2px">Not Started</div>
+                    </div>
+                }
+            }
+            @foreach (var stage in FactoryStages.All)
+            {
+                var count = ActiveOrders.Count(o => o.FactoryStage == stage);
+                if (count > 0)
+                {
+                    var color = stage switch
+                    {
+                        FactoryStages.SentToShop => "#25c850",
+                        FactoryStages.TrialSent or FactoryStages.TrialReceived => "#a855f7",
+                        FactoryStages.PressAndPacking => "#2dd4bf",
+                        _ => "#60aaff"
+                    };
+                    <div style="flex:1;min-width:100px;padding:10px 14px;background:rgba(255,255,255,0.04);border-radius:8px;border:1px solid rgba(255,255,255,0.08);text-align:center">
+                        <div style="font-size:22px;font-weight:700;color:@color">@count</div>
+                        <div style="font-size:11px;color:#666;margin-top:2px">@stage</div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+
+    <!-- Stage Performance Analytics -->
+    <div class="dash-charts">
+        <div class="card">
+            <span class="card-title">Stage Performance</span>
+            @if (StageAverages.Any())
+            {
+                var maxAvg = StageAverages.Max(s => s.AvgDays);
+                <div style="margin-top:10px">
+                    @foreach (var s in StageAverages)
+                    {
+                        var pct = maxAvg > 0 ? (int)(s.AvgDays / maxAvg * 100) : 5;
+                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                            <div style="width:130px;font-size:12px;color:#aaa;text-align:right;flex-shrink:0">@s.Stage</div>
+                            <div style="flex:1;background:rgba(255,255,255,0.06);border-radius:4px;height:22px;overflow:hidden">
+                                <div style="height:100%;width:@(pct)%;background:linear-gradient(90deg,#ffd12c,#ffaa00);border-radius:4px;min-width:2px"></div>
+                            </div>
+                            <div style="width:80px;font-size:12px;font-weight:600;color:#ffd12c;flex-shrink:0">@(s.AvgDays)d avg</div>
+                            <div style="width:50px;font-size:11px;color:#666;flex-shrink:0">@(s.OrderCount) ord</div>
+                        </div>
+                    }
+                </div>
+                <div style="margin-top:14px;padding-top:10px;border-top:1px solid rgba(255,255,255,0.08);font-size:13px;color:#888">
+                    Total average turnaround: <strong style="color:#ffd12c">@(StageAverages.Sum(s => s.AvgDays).ToString("F1")) days</strong>
+                    (from Received to Sent to Shop)
+                </div>
+            }
+            else
+            {
+                <p style="color:#555;font-size:13px;padding:20px 0;text-align:center">Not enough history data yet — stage averages appear once orders move through multiple stages.</p>
+            }
+        </div>
+
+        <div class="card">
+            <span class="card-title">Yesterday's Activity</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px">
+                <div style="text-align:center;padding:16px;background:rgba(255,255,255,0.04);border-radius:8px">
+                    <div style="font-size:28px;font-weight:700;color:#60aaff">@YestReceived</div>
+                    <div style="font-size:12px;color:#888;margin-top:4px">Orders Received</div>
+                </div>
+                <div style="text-align:center;padding:16px;background:rgba(255,255,255,0.04);border-radius:8px">
+                    <div style="font-size:28px;font-weight:700;color:#25c850">@YestCompleted</div>
+                    <div style="font-size:12px;color:#888;margin-top:4px">Sent to Shop</div>
+                </div>
+                <div style="text-align:center;padding:16px;background:rgba(255,255,255,0.04);border-radius:8px">
+                    <div style="font-size:28px;font-weight:700;color:#ffd12c">@YestTotalChanges</div>
+                    <div style="font-size:12px;color:#888;margin-top:4px">Stage Changes</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (!OverdueOrders.Any() && !StuckOrders.Any() && !TodaysTrials.Any())
+    {
+        <div class="card" style="text-align:center;padding:30px;border-left:3px solid #25c850">
+            <div style="font-size:22px;margin-bottom:6px">✓</div>
+            <div style="color:#25c850;font-weight:600;font-size:15px">All clear</div>
+            <div style="color:#888;font-size:13px;margin-top:4px">No overdue, stuck, or trial orders today</div>
+        </div>
+    }
+}
+
+@code {
+    bool Loading = true;
+    List<FactoryOrder> AllOrders = new();
+    List<FactoryOrder> ActiveOrders = new();
+    List<FactoryOrder> TodaysTrials = new();
+    List<FactoryOrder> OverdueOrders = new();
+    List<FactoryOrder> StuckOrders = new();
+    List<FactoryOrder> DueThisWeek = new();
+    List<StageAverage> StageAverages = new();
+    int YestReceived, YestCompleted, YestTotalChanges;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AllOrders = await OrderSvc.GetAllOrdersAsync();
+        ActiveOrders = AllOrders.Where(o => o.OrderStatus is not "Delivered" and not "Cancelled").ToList();
+
+        TodaysTrials = ActiveOrders
+            .Where(o => o.TrialDate.HasValue && o.TrialDate.Value.Date == DateTime.Today)
+            .OrderBy(o => o.TrialDate)
+            .ToList();
+
+        OverdueOrders = ActiveOrders.Where(o => o.IsOverdue).ToList();
+        StuckOrders = ActiveOrders.Where(o => o.IsStuck).ToList();
+
+        DueThisWeek = ActiveOrders
+            .Where(o => o.DeliveryDate.HasValue
+                && o.DeliveryDate.Value.Date >= DateTime.Today
+                && o.DeliveryDate.Value.Date <= DateTime.Today.AddDays(7))
+            .ToList();
+
+        StageAverages = await OrderSvc.GetStageAveragesAsync();
+
+        var (r, c, t) = await OrderSvc.GetThroughputAsync(DateTime.Today.AddDays(-1));
+        YestReceived = r; YestCompleted = c; YestTotalChanges = t;
+
+        Loading = false;
+    }
+
+    RenderFragment StageBadge(string? stage) => builder =>
+    {
+        if (string.IsNullOrEmpty(stage))
+        {
+            builder.OpenElement(0, "span");
+            builder.AddAttribute(1, "class", "badge badge-slate");
+            builder.AddContent(2, "Not Started");
+            builder.CloseElement();
+            return;
+        }
+        var cls = stage switch
+        {
+            FactoryStages.Received        => "badge-warning",
+            FactoryStages.Processing or
+            FactoryStages.Cutting or
+            FactoryStages.Stitching or
+            FactoryStages.CollarFinishing or
+            FactoryStages.Button          => "badge-info",
+            FactoryStages.TrialSent       => "badge-purple",
+            FactoryStages.TrialReceived or
+            FactoryStages.PressAndPacking => "badge-teal",
+            FactoryStages.SentToShop      => "badge-success",
+            _ => "badge-info"
+        };
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", $"badge {cls}");
+        builder.AddContent(2, stage);
+        builder.CloseElement();
+    };
+}

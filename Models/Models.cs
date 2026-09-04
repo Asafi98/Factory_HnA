@@ -72,6 +72,8 @@ public class FactoryOrder
     public string? OrderNotes { get; set; }
     public DateTime CreatedAt { get; set; }
     public bool IsDoorstep { get; set; }
+    public DateTime? LastStageChangeAt { get; set; }
+    public string? CustomerPhone { get; set; }
     public List<FactoryOrderItem> Items { get; set; } = new();
 
     public string ItemsSummary =>
@@ -81,6 +83,33 @@ public class FactoryOrder
         Items.Select(i => i.ProCat).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct()!;
 
     public string CurrentStageLabel => string.IsNullOrEmpty(FactoryStage) ? "Not Started" : FactoryStage;
+
+    public bool IsOverdue => DeliveryDate.HasValue
+        && DeliveryDate.Value.Date < DateTime.Today
+        && OrderStatus != "Delivered" && OrderStatus != "Cancelled";
+
+    public int DaysOverdue => IsOverdue ? (DateTime.Today - DeliveryDate!.Value.Date).Days : 0;
+
+    public bool IsStuck
+    {
+        get
+        {
+            if (OrderStatus is "Delivered" or "Cancelled") return false;
+            if (FactoryStage == FactoryStages.SentToShop) return false;
+            var lastActivity = LastStageChangeAt ?? CreatedAt;
+            return (DateTime.Today - lastActivity.Date).Days >= 3;
+        }
+    }
+
+    public int DaysStuck
+    {
+        get
+        {
+            if (!IsStuck) return 0;
+            var lastActivity = LastStageChangeAt ?? CreatedAt;
+            return (DateTime.Today - lastActivity.Date).Days;
+        }
+    }
 }
 
 public class FactoryOrderItem
@@ -246,6 +275,16 @@ public class Suit2PieceMeasurement
     public string? TThigh { get; set; }
     public string? TBottom { get; set; }
     public string? Comments { get; set; }
+}
+
+// ─────────────────────────────────────────
+//  Factory analytics models
+// ─────────────────────────────────────────
+public class StageAverage
+{
+    public string Stage { get; set; } = "";
+    public double AvgDays { get; set; }
+    public int OrderCount { get; set; }
 }
 
 public class MeasurementScan

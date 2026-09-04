@@ -31,14 +31,18 @@ public class FactoryOrderService
         var orders = (await conn.QueryAsync<FactoryOrder>(@"
             SELECT o.order_id AS OrderId, o.invoice_id AS InvoiceId,
                    o.customerid AS CustomerId, o.customername AS CustomerName,
+                   c.customerphone AS CustomerPhone,
                    ol.outlet_name AS OutletName, o.order_status AS OrderStatus,
                    o.factory_stage AS FactoryStage,
                    o.trial_date AS TrialDate, o.delivery_date AS DeliveryDate,
                    o.order_notes AS OrderNotes, o.created_at AS CreatedAt,
-                   IFNULL(i.is_doorstep, 0) AS IsDoorstep
+                   IFNULL(i.is_doorstep, 0) AS IsDoorstep,
+                   (SELECT MAX(fsh.changed_at) FROM factory_status_history fsh
+                    WHERE fsh.order_id = o.order_id) AS LastStageChangeAt
             FROM orders o
             LEFT JOIN outlets ol ON o.outlet_id = ol.outlet_id
             LEFT JOIN invoices i ON o.invoice_id = i.invoice_id
+            LEFT JOIN customer c ON o.customerid = c.customerid
             ORDER BY o.created_at DESC")).ToList();
 
         if (orders.Any())
@@ -111,5 +115,58 @@ public class FactoryOrderService
             await tx.CommitAsync();
         }
         catch { await tx.RollbackAsync(); throw; }
+    }
+
+    public async Task<List<StageAverage>> GetStageAveragesAsync()
+    {
+        var stageDurations = new Dictionary<string, List<double>>();
+
+        foreach (var key in new[] { Branches.Malir, Branches.Bukhari })
+        {
+            using var conn = _db.CreateForBranch(key);
+            var history = (await conn.QueryAsync<FactoryStatusHistory>(@"
+                SELECT history_id AS HistoryId, order_id AS OrderId,
+                       stage AS Stage, changed_at AS ChangedAt
+                FROM factory_status_history
+                ORDER BY order_id, changed_at, history_id")).ToList();
+
+            foreach (var group in history.GroupBy(h => h.OrderId))
+            {
+                var entries = group.OrderBy(h => h.ChangedAt).ThenBy(h => h.HistoryId).ToList();
+                for (int i = 0; i < entries.Count - 1; i++)
+                {
+                    var days = (entries[i + 1].ChangedAt - entries[i].ChangedAt).TotalDays;
+                    if (!stageDurations.ContainsKey(entries[i].Stage))
+                        stageDurations[entries[i].Stage] = new();
+                    stageDurations[entries[i].Stage].Add(days);
+                }
+            }
+        }
+
+        return FactoryStages.All
+            .Where(s => stageDurations.ContainsKey(s))
+            .Select(s => new StageAverage
+            {
+                Stage = s,
+                AvgDays = Math.Round(stageDurations[s].Average(), 1),
+                OrderCount = stageDurations[s].Count
+            })
+            .ToList();
+    }
+
+    public async Task<(int Received, int Completed, int TotalChanges)> GetThroughputAsync(DateTime date)
+    {
+        int received = 0, completed = 0, totalChanges = 0;
+        foreach (var key in new[] { Branches.Malir, Branches.Bukhari })
+        {
+            using var conn = _db.CreateForBranch(key);
+            var rows = (await conn.QueryAsync<string>(
+                "SELECT stage FROM factory_status_history WHERE DATE(changed_at)=@d",
+                new { d = date })).ToList();
+            totalChanges += rows.Count;
+            received += rows.Count(s => s == FactoryStages.Received);
+            completed += rows.Count(s => s == FactoryStages.SentToShop);
+        }
+        return (received, completed, totalChanges);
     }
 }

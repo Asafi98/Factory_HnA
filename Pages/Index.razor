@@ -41,7 +41,7 @@
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Stage</th><th>Order#</th><th>Branch</th><th>Customer</th><th>Outlet</th><th>Item</th><th>Qty</th><th>Trial</th><th>Delivery</th><th class="no-print">Actions</th></tr>
+                <tr><th>Stage</th><th>Alerts</th><th>Order#</th><th>Branch</th><th>Customer</th><th>Outlet</th><th>Item</th><th>Qty</th><th>Trial</th><th>Delivery</th><th class="no-print">Actions</th></tr>
             </thead>
             <tbody>
                 @foreach (var ord in Filtered)
@@ -50,8 +50,13 @@
                     var rowItems = o.Items.Any() ? o.Items : new List<FactoryOrderItem> { new() { ProductName = "—" } };
                     foreach (var item in rowItems)
                     {
-                        <tr>
+                        <tr style="@(o.IsOverdue ? "background:rgba(255,60,60,0.08);" : o.IsStuck ? "background:rgba(255,160,40,0.08);" : "")">
                             <td>@StageBadge(o.FactoryStage)</td>
+                            <td style="white-space:nowrap;font-size:11px">
+                                @if (o.IsOverdue) { <span class="badge badge-danger">OVERDUE @(o.DaysOverdue)d</span> }
+                                @if (o.IsStuck) { <span class="badge badge-warning">STUCK @(o.DaysStuck)d</span> }
+                                @if (!o.IsOverdue && !o.IsStuck) { <span style="color:#555">—</span> }
+                            </td>
                             <td style="font-weight:600">#@o.OrderId</td>
                             <td style="font-size:12px;color:#888">@o.BranchLabel@(o.IsDoorstep ? " 🏠" : "")</td>
                             <td style="font-weight:500">@o.CustomerName</td>
@@ -74,7 +79,7 @@
                         </tr>
                     }
                 }
-                @if (!Filtered.Any()) { <tr><td colspan="10" style="text-align:center;color:#555;padding:24px">No orders found.</td></tr> }
+                @if (!Filtered.Any()) { <tr><td colspan="11" style="text-align:center;color:#555;padding:24px">No orders found.</td></tr> }
             </tbody>
         </table>
     </div>
