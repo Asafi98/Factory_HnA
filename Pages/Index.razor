@@ -53,7 +53,8 @@
                         <tr style="@(o.IsOverdue ? "background:rgba(255,60,60,0.08);" : o.IsStuck ? "background:rgba(255,160,40,0.08);" : "")">
                             <td>@StageBadge(o.FactoryStage)</td>
                             <td style="white-space:nowrap;font-size:11px">
-                                @if (o.IsOverdue) { <span class="badge badge-danger">OVERDUE @(o.DaysOverdue)d</span> }
+                                @if (o.IsDeliveryOverdue) { <span class="badge badge-danger">DELIVERY +@(o.DaysDeliveryOverdue)d</span> }
+                                @if (o.IsTrialOverdue) { <span class="badge badge-danger">TRIAL +@(o.DaysTrialOverdue)d</span> }
                                 @if (o.IsStuck) { <span class="badge badge-warning">STUCK @(o.DaysStuck)d</span> }
                                 @if (!o.IsOverdue && !o.IsStuck) { <span style="color:#555">—</span> }
                             </td>

@@ -28,10 +28,10 @@ else
         <div class="stat-card red">
             <span class="stat-label">Overdue</span>
             <span class="stat-value">@OverdueOrders.Count</span>
-            <span class="stat-sub">Past delivery date</span>
+            <span class="stat-sub">Trial or delivery 2+ days past</span>
         </div>
         <div class="stat-card red">
-            <span class="stat-label">Stuck 3+ Days</span>
+            <span class="stat-label">Stuck 2+ Days</span>
             <span class="stat-value">@StuckOrders.Count</span>
             <span class="stat-sub">No stage change</span>
         </div>
@@ -73,16 +73,16 @@ else
         </div>
     }
 
-    <!-- Overdue Deliveries -->
+    <!-- Overdue Orders (delivery or trial) -->
     @if (OverdueOrders.Any())
     {
         <div class="card" style="border-left:3px solid #ff4040">
-            <span class="card-title" style="color:#ff6060">Overdue Deliveries (@OverdueOrders.Count)</span>
+            <span class="card-title" style="color:#ff6060">Overdue Orders (@OverdueOrders.Count)</span>
             <div class="table-wrap">
                 <table>
-                    <thead><tr><th>Order#</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Stage</th><th>Delivery</th><th>Overdue</th></tr></thead>
+                    <thead><tr><th>Order#</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Stage</th><th>Trial</th><th>Delivery</th><th>Overdue</th></tr></thead>
                     <tbody>
-                        @foreach (var o in OverdueOrders.OrderByDescending(x => x.DaysOverdue))
+                        @foreach (var o in OverdueOrders.OrderByDescending(x => Math.Max(x.DaysDeliveryOverdue, x.DaysTrialOverdue)))
                         {
                             <tr>
                                 <td style="font-weight:600">#@o.OrderId</td>
@@ -90,8 +90,12 @@ else
                                 <td style="font-size:12px">@(o.CustomerPhone ?? "—")</td>
                                 <td style="font-size:12px;color:#888">@o.BranchLabel</td>
                                 <td>@StageBadge(o.FactoryStage)</td>
+                                <td style="font-size:12px">@(o.TrialDate?.ToString("dd MMM yyyy") ?? "—")</td>
                                 <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
-                                <td><span class="badge badge-danger">@(o.DaysOverdue) days</span></td>
+                                <td style="white-space:nowrap">
+                                    @if (o.IsDeliveryOverdue) { <span class="badge badge-danger">Delivery +@(o.DaysDeliveryOverdue)d</span> }
+                                    @if (o.IsTrialOverdue) { <span class="badge badge-danger">Trial +@(o.DaysTrialOverdue)d</span> }
+                                </td>
                             </tr>
                         }
                     </tbody>
@@ -105,7 +109,7 @@ else
     {
         <div class="card" style="border-left:3px solid #ffa028">
             <span class="card-title" style="color:#ffa028">Stuck in Factory (@StuckOrders.Count)</span>
-            <p style="font-size:12px;color:#888;margin:0 0 10px">Orders with no stage change for 3+ days</p>
+            <p style="font-size:12px;color:#888;margin:0 0 10px">Orders with no stage change for 2+ days</p>
             <div class="table-wrap">
                 <table>
                     <thead><tr><th>Order#</th><th>Customer</th><th>Branch</th><th>Stage</th><th>Last Activity</th><th>Idle</th></tr></thead>

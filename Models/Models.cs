@@ -84,11 +84,21 @@ public class FactoryOrder
 
     public string CurrentStageLabel => string.IsNullOrEmpty(FactoryStage) ? "Not Started" : FactoryStage;
 
-    public bool IsOverdue => DeliveryDate.HasValue
-        && DeliveryDate.Value.Date < DateTime.Today
+    public bool IsDeliveryOverdue => DeliveryDate.HasValue
+        && (DateTime.Today - DeliveryDate.Value.Date).Days >= 2
         && OrderStatus != "Delivered" && OrderStatus != "Cancelled";
 
-    public int DaysOverdue => IsOverdue ? (DateTime.Today - DeliveryDate!.Value.Date).Days : 0;
+    public bool IsTrialOverdue => TrialDate.HasValue
+        && (DateTime.Today - TrialDate.Value.Date).Days >= 2
+        && OrderStatus != "Delivered" && OrderStatus != "Cancelled"
+        && FactoryStage != FactoryStages.TrialReceived
+        && FactoryStage != FactoryStages.PressAndPacking
+        && FactoryStage != FactoryStages.SentToShop;
+
+    public bool IsOverdue => IsDeliveryOverdue || IsTrialOverdue;
+
+    public int DaysDeliveryOverdue => IsDeliveryOverdue ? (DateTime.Today - DeliveryDate!.Value.Date).Days : 0;
+    public int DaysTrialOverdue => IsTrialOverdue ? (DateTime.Today - TrialDate!.Value.Date).Days : 0;
 
     public bool IsStuck
     {
@@ -97,7 +107,7 @@ public class FactoryOrder
             if (OrderStatus is "Delivered" or "Cancelled") return false;
             if (FactoryStage == FactoryStages.SentToShop) return false;
             var lastActivity = LastStageChangeAt ?? CreatedAt;
-            return (DateTime.Today - lastActivity.Date).Days >= 3;
+            return (DateTime.Today - lastActivity.Date).Days >= 2;
         }
     }
 
