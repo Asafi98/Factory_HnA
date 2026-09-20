@@ -1,0 +1,82 @@
+@page "/outsource-settings"
+@inject FactoryOrderService OrderSvc
+@inject FactoryAuthService AuthSvc
+
+<div class="page-header">
+    <h1>Outsource Settings</h1>
+    <p>Manage which garment types are outsourced</p>
+</div>
+
+<div class="card" style="max-width:600px">
+    <div class="card-title">Active Outsourced Garment Types</div>
+    <p style="font-size:12px;color:var(--ink-muted);margin-bottom:12px">
+        Items matching these garment types will appear in the Outsourcing page.
+        Removing a type moves its items back to regular orders.
+    </p>
+
+    @if (Settings.Any())
+    {
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+            @foreach (var s in Settings)
+            {
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-s,6px)">
+                    <span style="font-weight:500">@s.GarmentType</span>
+                    <button class="btn btn-ghost btn-sm" style="color:var(--rust)" @onclick="() => Remove(s.Id)">Remove</button>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <p style="text-align:center;color:var(--ink-faint);padding:20px">No outsourced garment types configured.</p>
+    }
+
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:8px">
+        <div class="card-title" style="font-size:13px">Add Garment Type</div>
+        <div style="display:flex;gap:8px">
+            <input class="form-control" placeholder="e.g. Waistcoat, Sherwani..." style="flex:1" @bind="NewType" @onkeydown="HandleKey" />
+            <button class="btn btn-primary" @onclick="Add" disabled="@string.IsNullOrWhiteSpace(NewType)">Add</button>
+        </div>
+        @if (!string.IsNullOrEmpty(ErrorMsg))
+        {
+            <p style="color:var(--rust);font-size:12px;margin-top:6px">@ErrorMsg</p>
+        }
+    </div>
+</div>
+
+@code {
+    List<OutsourceSetting> Settings = new();
+    string NewType = "";
+    string ErrorMsg = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Settings = await OrderSvc.GetOutsourceSettingsAsync();
+    }
+
+    async Task Add()
+    {
+        ErrorMsg = "";
+        if (string.IsNullOrWhiteSpace(NewType)) return;
+        var trimmed = NewType.Trim();
+        if (Settings.Any(s => s.GarmentType.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
+        {
+            ErrorMsg = $"'{trimmed}' is already in the list.";
+            return;
+        }
+        await OrderSvc.AddOutsourceSettingAsync(trimmed);
+        NewType = "";
+        Settings = await OrderSvc.GetOutsourceSettingsAsync();
+    }
+
+    async Task Remove(int id)
+    {
+        await OrderSvc.RemoveOutsourceSettingAsync(id);
+        Settings = await OrderSvc.GetOutsourceSettingsAsync();
+    }
+
+    async Task HandleKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await Add();
+    }
+}

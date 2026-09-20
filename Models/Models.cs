@@ -74,6 +74,7 @@ public class FactoryOrder
     public bool IsDoorstep { get; set; }
     public DateTime? LastStageChangeAt { get; set; }
     public string? CustomerPhone { get; set; }
+    public DateTime? ClosedAt { get; set; }
     public List<FactoryOrderItem> Items { get; set; } = new();
 
     public string ItemsSummary =>
@@ -131,6 +132,13 @@ public class FactoryOrderItem
     public string? ProCat { get; set; }
     public int Quantity { get; set; } = 1;
     public string? ItemNotes { get; set; }
+    public string ItemStatus { get; set; } = "Pending";
+    public string? GarmentType { get; set; }
+    public bool IsOutsourced { get; set; }
+    public string? OutsourceVendor { get; set; }
+    public DateTime? SentToFactoryAt { get; set; }
+    public DateTime? FactoryAcceptedAt { get; set; }
+    public DateTime? SentToShopAt { get; set; }
 }
 
 public class FactoryStatusHistory
@@ -310,4 +318,34 @@ public class MeasurementScan
     public string DataUri => $"data:{ContentType};base64,{Convert.ToBase64String(FileData)}";
     public bool IsImage => ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
     public bool IsPdf => ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase);
+}
+
+public class OrderItemRemark
+{
+    public int RemarkId { get; set; }
+    public int OrderId { get; set; }
+    public int OrderItemId { get; set; }
+    public string RemarkText { get; set; } = "";
+    public string? RemarkType { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public string? CreatedBy { get; set; }
+}
+
+public class OutsourceSetting
+{
+    public int Id { get; set; }
+    public string GarmentType { get; set; } = "";
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; }
+}
+
+public class GarmentTypeSummary
+{
+    public string GarmentType { get; set; } = "";
+    public int TotalOrdered { get; set; }
+    public int Delivered { get; set; }
+    public int InProgress { get; set; }
+    public int Returned { get; set; }
+    public int Altered { get; set; }
+    public int TrialDone { get; set; }
 }

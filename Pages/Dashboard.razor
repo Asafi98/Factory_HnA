@@ -249,10 +249,56 @@ else
         </div>
     </div>
 
+    @if (GarmentSummary.Any())
+    {
+        <div class="card">
+            <span class="card-title">Garment Type Summary (Both Branches)</span>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Garment Type</th><th>Total Ordered</th><th>In Progress</th><th>Trial Done</th><th>Delivered</th><th>Returned / Altered</th></tr></thead>
+                <tbody>
+                    @foreach (var g in GarmentSummary)
+                    {
+                        <tr>
+                            <td style="font-weight:600">@g.GarmentType</td>
+                            <td>@g.TotalOrdered</td>
+                            <td style="color:#60aaff">@g.InProgress</td>
+                            <td style="color:#ffd12c">@g.TrialDone</td>
+                            <td style="color:#25c850">@g.Delivered</td>
+                            <td style="color:#ff6060">@g.Returned</td>
+                        </tr>
+                    }
+                </tbody>
+            </table></div>
+        </div>
+    }
+
+    @if (PaymentReminders.Any())
+    {
+        <div class="card" style="border-left:3px solid #ff4040">
+            <span class="card-title" style="color:#ff6060">Payment Reminders (Closed &gt; 2 days, unpaid balance)</span>
+            <div class="table-wrap"><table>
+                <thead><tr><th>Order#</th><th>Customer</th><th>Branch</th><th>Outlet</th><th>Closed On</th><th>Days Since</th></tr></thead>
+                <tbody>
+                    @foreach (var o in PaymentReminders)
+                    {
+                        <tr>
+                            <td style="font-weight:600">#@o.OrderId</td>
+                            <td>@o.CustomerName</td>
+                            <td style="font-size:12px;color:#888">@o.BranchLabel</td>
+                            <td style="color:var(--ink-muted)">@(o.OutletName ?? "—")</td>
+                            <td style="font-size:12px">@o.ClosedAt?.ToString("dd MMM yyyy")</td>
+                            <td><span class="badge badge-danger">@((DateTime.Today - o.ClosedAt!.Value).Days) days</span></td>
+                        </tr>
+                    }
+                </tbody>
+            </table></div>
+        </div>
+    }
+
     @if (!OverdueOrders.Any() && !StuckOrders.Any() && !TodaysTrials.Any())
     {
         <div class="card" style="text-align:center;padding:30px;border-left:3px solid #25c850">
-            <div style="font-size:22px;margin-bottom:6px">✓</div>
+            <div style="font-size:22px;margin-bottom:6px">&#10003;</div>
             <div style="color:#25c850;font-weight:600;font-size:15px">All clear</div>
             <div style="color:#888;font-size:13px;margin-top:4px">No overdue, stuck, or trial orders today</div>
         </div>
@@ -268,6 +314,8 @@ else
     List<FactoryOrder> StuckOrders = new();
     List<FactoryOrder> DueThisWeek = new();
     List<StageAverage> StageAverages = new();
+    List<GarmentTypeSummary> GarmentSummary = new();
+    List<FactoryOrder> PaymentReminders = new();
     int YestReceived, YestCompleted, YestTotalChanges;
 
     protected override async Task OnInitializedAsync()
@@ -290,6 +338,8 @@ else
             .ToList();
 
         StageAverages = await OrderSvc.GetStageAveragesAsync();
+        GarmentSummary = await OrderSvc.GetGarmentTypeSummaryAsync();
+        PaymentReminders = await OrderSvc.GetOverduePaymentsAsync();
 
         var (r, c, t) = await OrderSvc.GetThroughputAsync(DateTime.Today.AddDays(-1));
         YestReceived = r; YestCompleted = c; YestTotalChanges = t;

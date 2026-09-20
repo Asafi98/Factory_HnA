@@ -8,23 +8,28 @@
     <div class="pos-shell">
         <nav class="sidebar">
             <div class="sidebar-brand">
-                <span class="brand-icon">🏭</span>
+                <span class="brand-icon">F</span>
                 <span class="brand-name">Husna Aijaz Factory</span>
             </div>
             <ul class="nav-links">
-                @NavItem("/dashboard", "📊", "Dashboard")
-                @NavItem("/", "📦", "Orders")
-                @NavItem("/customers", "👥", "Customers")
+                @NavItem("/dashboard", "Dashboard")
+                @NavItem("/", "Orders (Stages)")
+                @NavItem("/factory-orders", "Per-Item Tracking")
+                <li class="nav-section">OUTSOURCING</li>
+                @NavItem("/outsourcing", "Outsourced Items")
+                @NavItem("/outsource-settings", "Settings")
+                <li class="nav-section">OTHER</li>
+                @NavItem("/customers", "Customers")
             </ul>
             <div class="sidebar-footer">
                 <div class="logged-in-user">
-                    <span class="user-avatar">👤</span>
-                    <div class="user-info">
-                        <span class="user-name">@AuthSvc.LoggedInUser</span>
-                        <span class="user-role">Factory Staff</span>
+                    <div class="user-avatar">@(AuthSvc.FullName?.Length > 0 ? AuthSvc.FullName.Substring(0,1).ToUpper() : "F")</div>
+                    <div>
+                        <div class="user-name">@(AuthSvc.FullName)</div>
+                        <div class="user-role">Factory Staff</div>
                     </div>
                 </div>
-                <button class="logout-btn" @onclick="Logout">⏻ Logout</button>
+                <button class="logout-btn" @onclick="Logout">Logout</button>
             </div>
         </nav>
         <main class="main-content">@Body</main>
@@ -59,7 +64,7 @@ else
 
     public void Dispose() => AuthSvc.OnAuthChanged -= OnAuthStateChanged;
 
-    RenderFragment NavItem(string path, string icon, string label) => builder =>
+    RenderFragment NavItem(string path, string label) => builder =>
     {
         var current = "/" + Nav.ToBaseRelativePath(Nav.Uri);
         var isActive = (current == path || (path == "/" && current == "")) ? "active" : "";
@@ -67,7 +72,7 @@ else
         builder.OpenElement(1, "a");
         builder.AddAttribute(2, "href", path);
         builder.AddAttribute(3, "class", isActive);
-        builder.AddMarkupContent(4, $"<span>{icon}</span> {label}");
+        builder.AddContent(4, label);
         builder.CloseElement();
         builder.CloseElement();
     };

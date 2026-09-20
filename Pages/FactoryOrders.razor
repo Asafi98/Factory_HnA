@@ -1,0 +1,259 @@
+@page "/factory-orders"
+@inject FactoryOrderService OrderSvc
+@inject FactoryAuthService AuthSvc
+
+<div class="page-header">
+    <h1>Factory Orders</h1>
+    <p>Manage in-house production &mdash; per-item status tracking</p>
+</div>
+
+@if (PendingAcceptance.Any())
+{
+    <div class="alert alert-success" style="cursor:pointer" @onclick="() => ShowIncoming = true">
+        <strong>@PendingAcceptance.Count item(s) sent to factory</strong> — Click to review and accept
+    </div>
+}
+
+<div class="tab-bar">
+    <button class="tab-btn @(Filter==""?"active":"")" @onclick='()=>Filter=""'>All</button>
+    <button class="tab-btn @(Filter=="Arrived at Factory"?"active":"")" @onclick='()=>Filter="Arrived at Factory"'>Arrived</button>
+    <button class="tab-btn @(Filter=="In Progress"?"active":"")" @onclick='()=>Filter="In Progress"'>In Progress</button>
+    <button class="tab-btn @(Filter=="Sent for Trial"?"active":"")" @onclick='()=>Filter="Sent for Trial"'>Trial Ready</button>
+    <button class="tab-btn @(Filter=="Sent Back"?"active":"")" @onclick='()=>Filter="Sent Back"'>Sent Back</button>
+    <button class="tab-btn @(Filter=="Completed"?"active":"")" @onclick='()=>Filter="Completed"'>Completed</button>
+    <button class="tab-btn @(Filter=="Sent to Shop"?"active":"")" @onclick='()=>Filter="Sent to Shop"'>Sent to Shop</button>
+</div>
+
+<div class="card" style="padding:10px;margin-bottom:10px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select class="form-control" style="width:160px" @bind="GarmentFilter">
+            <option value="">All Garment Types</option>
+            @foreach (var gt in GarmentTypes)
+            {
+                <option>@gt</option>
+            }
+        </select>
+        <input class="form-control" placeholder="Search customer..." style="flex:1;min-width:150px" @bind="SearchText" />
+    </div>
+</div>
+
+<div class="card">
+    <div class="table-wrap"><table>
+        <thead><tr><th>Order#</th><th>Branch</th><th>Item</th><th>Garment</th><th>Customer</th><th>Outlet</th><th>Booking</th><th>Trial</th><th>Delivery</th><th>Arrived</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+            @foreach (var order in FilteredOrders)
+            {
+                foreach (var item in order.Items.Where(i => MatchFilter(i)))
+                {
+                    <tr>
+                        <td style="font-weight:600">#@order.OrderId</td>
+                        <td style="font-size:11px;color:#888">@order.BranchLabel</td>
+                        <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@item.Quantity</span></td>
+                        <td>@if (!string.IsNullOrEmpty(item.GarmentType)){<span class="badge badge-info">@item.GarmentType</span>}else{<span style="color:var(--ink-faint)">—</span>}</td>
+                        <td>@order.CustomerName</td>
+                        <td style="color:var(--ink-muted);font-size:11px">@(order.OutletName ?? "—")</td>
+                        <td style="font-size:11px">@order.CreatedAt.ToString("dd MMM")</td>
+                        <td style="font-size:11px">@(order.TrialDate?.ToString("dd MMM") ?? "—")</td>
+                        <td style="font-size:11px">@(order.DeliveryDate?.ToString("dd MMM") ?? "—")</td>
+                        <td style="font-size:11px">@(item.FactoryAcceptedAt?.ToString("dd MMM") ?? "—")</td>
+                        <td><span class="badge @StatusBadge(item.ItemStatus)">@item.ItemStatus</span></td>
+                        <td style="white-space:nowrap">
+                            @if (item.ItemStatus == "Arrived at Factory")
+                            {
+                                <button class="btn btn-primary btn-sm" @onclick='() => ChangeStatus(order, item, "In Progress")'>Start</button>
+                            }
+                            else if (item.ItemStatus == "In Progress")
+                            {
+                                <button class="btn btn-warning btn-sm" @onclick='() => ChangeStatus(order, item, "Sent for Trial")'>Ready for Trial</button>
+                                <button class="btn btn-success btn-sm" @onclick='() => ChangeStatus(order, item, "Completed")'>Complete</button>
+                            }
+                            else if (item.ItemStatus == "Sent Back")
+                            {
+                                <button class="btn btn-primary btn-sm" @onclick='() => ChangeStatus(order, item, "In Progress")'>Rework</button>
+                            }
+                            else if (item.ItemStatus == "Completed")
+                            {
+                                <button class="btn btn-success btn-sm" @onclick='() => ChangeStatus(order, item, "Sent to Shop")'>Send to Shop</button>
+                            }
+                            <button class="btn btn-ghost btn-sm" @onclick="() => ViewRemarks(order, item)">Remarks</button>
+                        </td>
+                    </tr>
+                }
+            }
+            @if (!FilteredOrders.Any())
+            {
+                <tr><td colspan="12" style="text-align:center;color:var(--ink-faint);padding:24px">No items found.</td></tr>
+            }
+        </tbody>
+    </table></div>
+</div>
+
+@* Incoming items dialog *@
+@if (ShowIncoming)
+{
+    <div class="modal-overlay" @onclick="() => ShowIncoming = false">
+        <div class="modal-box" style="max-width:750px" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h2>Items Sent to Factory</h2>
+                <button class="btn btn-ghost btn-sm" @onclick="() => ShowIncoming = false">&#10005;</button>
+            </div>
+            <div class="modal-body">
+                @foreach (var order in PendingAcceptance)
+                {
+                    <div style="margin-bottom:16px;padding:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-m,8px)">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                            <div>
+                                <span style="font-weight:700;color:var(--ink)">Order #@order.OrderId</span>
+                                <span style="color:var(--ink-muted);margin-left:8px">@order.CustomerName</span>
+                                <span style="font-size:11px;color:var(--ink-faint);margin-left:8px">@order.BranchLabel</span>
+                            </div>
+                            <span style="font-size:11px;color:var(--ink-faint)">Booked: @order.CreatedAt.ToString("dd MMM yyyy")</span>
+                        </div>
+                        @foreach (var item in order.Items)
+                        {
+                            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin-bottom:4px;background:var(--surface);border:1px solid var(--border);border-radius:6px">
+                                <div>
+                                    <span style="font-weight:500">@item.ProductName</span>
+                                    @if (!string.IsNullOrEmpty(item.GarmentType))
+                                    {
+                                        <span class="badge badge-info" style="margin-left:6px">@item.GarmentType</span>
+                                    }
+                                    <span style="color:var(--ink-muted);font-size:11px;margin-left:6px">x@item.Quantity</span>
+                                </div>
+                                <div style="display:flex;gap:6px;align-items:center">
+                                    <span style="font-size:11px;color:var(--ink-faint)">Sent: @(item.SentToFactoryAt?.ToString("dd MMM, hh:mm tt") ?? "—")</span>
+                                    <button class="btn btn-primary btn-sm" @onclick="() => AcceptItem(order, item)">Accept</button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* Remarks modal *@
+@if (SelectedItem != null)
+{
+    <div class="modal-overlay" @onclick="() => SelectedItem = null">
+        <div class="modal-box md" @onclick:stopPropagation>
+            <div class="modal-header">
+                <h2>Remarks &mdash; @SelectedItem.ProductName</h2>
+                <button class="btn btn-ghost btn-sm" @onclick="() => SelectedItem = null">&#10005;</button>
+            </div>
+            <div class="modal-body">
+                @if (ItemRemarks.Any())
+                {
+                    @foreach (var remark in ItemRemarks)
+                    {
+                        <div style="padding:8px;margin-bottom:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px">
+                            <div style="display:flex;justify-content:space-between;margin-bottom:3px">
+                                <span class="badge @(remark.RemarkType == "trial" ? "badge-warning" : remark.RemarkType == "fixing" ? "badge-danger" : "badge-info")">@(remark.RemarkType ?? "general")</span>
+                                <span style="font-size:10px;color:var(--ink-faint)">@remark.CreatedAt.ToString("dd MMM yyyy, hh:mm tt") — @(remark.CreatedBy ?? "—")</span>
+                            </div>
+                            <p style="font-size:12px;color:var(--ink);margin:0">@remark.RemarkText</p>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <p style="color:var(--ink-faint);text-align:center;padding:12px">No remarks yet.</p>
+                }
+                <div style="margin-top:10px;display:flex;gap:6px">
+                    <input class="form-control" placeholder="Add a remark..." style="flex:1" @bind="NewRemarkText" />
+                    <button class="btn btn-primary btn-sm" @onclick="AddRemark">Add</button>
+                </div>
+            </div>
+            <div class="modal-footer"><button class="btn btn-ghost" @onclick="() => SelectedItem = null">Close</button></div>
+        </div>
+    </div>
+}
+
+@code {
+    List<FactoryOrder> AllOrders = new();
+    List<FactoryOrder> PendingAcceptance = new();
+    string Filter = "";
+    string GarmentFilter = "";
+    string SearchText = "";
+    bool ShowIncoming;
+    FactoryOrderItem? SelectedItem;
+    FactoryOrder? SelectedOrder;
+    List<OrderItemRemark> ItemRemarks = new();
+    List<string> GarmentTypes = new();
+    string NewRemarkText = "";
+
+    IEnumerable<FactoryOrder> FilteredOrders => AllOrders
+        .Where(o => string.IsNullOrEmpty(SearchText) ||
+            o.CustomerName.Contains(SearchText, StringComparison.OrdinalIgnoreCase))
+        .Where(o => o.Items.Any(i => MatchFilter(i)));
+
+    bool MatchFilter(FactoryOrderItem i)
+    {
+        if (!string.IsNullOrEmpty(Filter) && i.ItemStatus != Filter) return false;
+        if (!string.IsNullOrEmpty(GarmentFilter) && i.GarmentType != GarmentFilter) return false;
+        if (string.IsNullOrEmpty(Filter) &&
+            i.ItemStatus is "Pending" or "Sent to Factory" or "Delivered" or "Cancelled") return false;
+        return true;
+    }
+
+    string StatusBadge(string s) => s switch
+    {
+        "Arrived at Factory" => "badge-info",
+        "In Progress" => "badge-warning",
+        "Sent for Trial" => "badge-purple",
+        "Trial Done" => "badge-teal",
+        "Sent Back" => "badge-danger",
+        "Completed" => "badge-success",
+        "Sent to Shop" => "badge-success",
+        _ => "badge-info"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadOrders();
+    }
+
+    async Task LoadOrders()
+    {
+        AllOrders = await OrderSvc.GetAllOrdersAsync();
+        PendingAcceptance = await OrderSvc.GetSentToFactoryAsync();
+        GarmentTypes = AllOrders
+            .SelectMany(o => o.Items)
+            .Where(i => !string.IsNullOrEmpty(i.GarmentType))
+            .Select(i => i.GarmentType!)
+            .Distinct().OrderBy(x => x).ToList();
+    }
+
+    async Task ChangeStatus(FactoryOrder order, FactoryOrderItem item, string newStatus)
+    {
+        await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, newStatus,
+            AuthSvc.LoggedInUser ?? "factory");
+        await LoadOrders();
+    }
+
+    async Task AcceptItem(FactoryOrder order, FactoryOrderItem item)
+    {
+        await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, "Arrived at Factory",
+            AuthSvc.LoggedInUser ?? "factory");
+        PendingAcceptance = await OrderSvc.GetSentToFactoryAsync();
+        if (!PendingAcceptance.Any()) ShowIncoming = false;
+        await LoadOrders();
+    }
+
+    async Task ViewRemarks(FactoryOrder order, FactoryOrderItem item)
+    {
+        SelectedItem = item;
+        SelectedOrder = order;
+        ItemRemarks = await OrderSvc.GetRemarksAsync(order.BranchKey, item.OrderItemId);
+    }
+
+    async Task AddRemark()
+    {
+        if (SelectedItem == null || SelectedOrder == null || string.IsNullOrWhiteSpace(NewRemarkText)) return;
+        await OrderSvc.AddRemarkAsync(SelectedOrder.BranchKey, SelectedOrder.OrderId,
+            SelectedItem.OrderItemId, NewRemarkText, "factory", AuthSvc.LoggedInUser ?? "factory");
+        NewRemarkText = "";
+        ItemRemarks = await OrderSvc.GetRemarksAsync(SelectedOrder.BranchKey, SelectedItem.OrderItemId);
+    }
+}
