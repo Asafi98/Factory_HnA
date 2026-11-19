@@ -438,8 +438,8 @@ public class FactoryOrderService
         {
             using var conn = _db.CreateForBranch(key);
             var rows = (await conn.QueryAsync<string>(
-                "SELECT stage FROM factory_status_history WHERE DATE(changed_at)=@d",
-                new { d = date })).ToList();
+                "SELECT stage FROM factory_status_history WHERE changed_at >= @d AND changed_at < @d2",
+                new { d = date.Date, d2 = date.Date.AddDays(1) })).ToList();
             totalChanges += rows.Count;
             received += rows.Count(s => s == FactoryStages.Received);
             completed += rows.Count(s => s == FactoryStages.SentToShop);

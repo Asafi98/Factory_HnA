@@ -20,8 +20,7 @@
 
 <div class="card" style="padding:12px;margin-bottom:14px">
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <input class="form-control" style="flex:1;min-width:180px" placeholder="Search by customer..."
-               value="@Search" @oninput="e => { Search = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }" />
+        <input @ref="_searchRef" class="form-control" style="flex:1;min-width:180px" placeholder="Search by customer..." />
         <select class="form-control" style="width:180px" @onchange="e => { CategoryFilter = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }">
             <option value="">All Categories</option>
             @foreach (var c in Categories) { <option value="@c">@c</option> }
@@ -173,6 +172,8 @@
     </div>
 }
 
+@implements IAsyncDisposable
+
 @code {
     // The database stores timestamps in UTC (MySQL's default); Pakistan is a fixed
     // UTC+5 with no daylight saving, so a flat offset is correct year-round.
@@ -184,6 +185,9 @@
     List<FactoryStatusHistory> History = new();
     string Search = "", CategoryFilter = "", LocationFilter = "", StageFilter = "", Msg = "";
     bool IsErr;
+
+    ElementReference _searchRef;
+    DotNetObjectReference<Index>? _dotNetRef;
 
     static readonly string[] GarmentTypes = { "Shirt", "Pant", "Waistcoat", "Shalwar Kameez", "Coat / Sherwani", "2-Piece Suit" };
 
@@ -204,6 +208,29 @@
         Outlets = await LookupSvc.GetOutletNamesAsync();
         AllOrders = await OrderSvc.GetAllOrdersAsync();
         ApplyFilter();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("blazorDebounce.init", _searchRef, _dotNetRef, "OnSearchDebounced", 300);
+        }
+    }
+
+    [JSInvokable]
+    public void OnSearchDebounced(string value)
+    {
+        Search = value;
+        ApplyFilter();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _dotNetRef?.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     void SetStageFilter(string stage) { StageFilter = stage; ApplyFilter(); }
