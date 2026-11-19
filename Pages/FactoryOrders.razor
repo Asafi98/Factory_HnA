@@ -39,7 +39,7 @@
 
 <div class="card">
     <div class="table-wrap"><table>
-        <thead><tr><th>Order#</th><th>Branch</th><th>Item</th><th>Garment</th><th>Customer</th><th>Outlet</th><th>Booking</th><th>Trial</th><th>Delivery</th><th>Arrived</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Order#</th><th>Book No.</th><th>Branch</th><th>Item</th><th>Garment</th><th>Customer</th><th>Outlet</th><th>Booking</th><th>Trial</th><th>Delivery</th><th>Arrived</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody>
             @foreach (var order in FilteredOrders)
             {
@@ -47,6 +47,7 @@
                 {
                     <tr>
                         <td style="font-weight:600">#@order.OrderId</td>
+                        <td style="font-weight:600;color:var(--gold)">@(order.BookNo ?? "—")</td>
                         <td style="font-size:11px;color:#888">@order.BranchLabel</td>
                         <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@item.Quantity</span></td>
                         <td>@if (!string.IsNullOrEmpty(item.GarmentType)){<span class="badge badge-info">@item.GarmentType</span>}else{<span style="color:var(--ink-faint)">—</span>}</td>

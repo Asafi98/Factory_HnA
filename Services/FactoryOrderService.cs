@@ -28,7 +28,7 @@ public class FactoryOrderService
         using var conn = _db.CreateForBranch(branchKey);
 
         var orders = (await conn.QueryAsync<FactoryOrder>(@"
-            SELECT o.order_id AS OrderId, o.invoice_id AS InvoiceId,
+            SELECT o.order_id AS OrderId, o.book_no AS BookNo, o.invoice_id AS InvoiceId,
                    o.customerid AS CustomerId, o.customername AS CustomerName,
                    c.customerphone AS CustomerPhone,
                    ol.outlet_name AS OutletName, o.order_status AS OrderStatus,
@@ -154,7 +154,7 @@ public class FactoryOrderService
     {
         using var conn = _db.CreateForBranch(branchKey);
         var orders = (await conn.QueryAsync<FactoryOrder>(@"
-            SELECT DISTINCT o.order_id AS OrderId, o.invoice_id AS InvoiceId,
+            SELECT DISTINCT o.order_id AS OrderId, o.book_no AS BookNo, o.invoice_id AS InvoiceId,
                    o.customerid AS CustomerId, o.customername AS CustomerName,
                    c.customerphone AS CustomerPhone,
                    ol.outlet_name AS OutletName, o.order_status AS OrderStatus,
@@ -212,7 +212,7 @@ public class FactoryOrderService
     {
         using var conn = _db.CreateForBranch(branchKey);
         var orders = (await conn.QueryAsync<FactoryOrder>(@"
-            SELECT o.order_id AS OrderId, o.invoice_id AS InvoiceId,
+            SELECT o.order_id AS OrderId, o.book_no AS BookNo, o.invoice_id AS InvoiceId,
                    o.customerid AS CustomerId, o.customername AS CustomerName,
                    ol.outlet_name AS OutletName, o.order_status AS OrderStatus,
                    o.created_at AS CreatedAt, o.closed_at AS ClosedAt
@@ -442,5 +442,13 @@ public class FactoryOrderService
             completed += rows.Count(s => s == FactoryStages.SentToShop);
         }
         return (received, completed, totalChanges);
+    }
+
+    public async Task UpdateBookNoAsync(int orderId, string branchKey, string? bookNo)
+    {
+        using var conn = _db.CreateForBranch(branchKey);
+        await conn.ExecuteAsync(
+            "UPDATE orders SET book_no=NULLIF(@bno, '') WHERE order_id=@id",
+            new { bno = bookNo?.Trim() ?? "", id = orderId });
     }
 }

@@ -61,6 +61,7 @@ public class FactoryOrder
     public string BranchKey { get; set; } = "";
     public string BranchLabel { get; set; } = "";
     public int OrderId { get; set; }
+    public string? BookNo { get; set; }
     public int? InvoiceId { get; set; }
     public int? CustomerId { get; set; }
     public string CustomerName { get; set; } = "";
