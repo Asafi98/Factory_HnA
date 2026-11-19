@@ -154,7 +154,7 @@ public class FactoryOrderService
     {
         using var conn = _db.CreateForBranch(branchKey);
         var orders = (await conn.QueryAsync<FactoryOrder>(@"
-            SELECT DISTINCT o.order_id AS OrderId, o.book_no AS BookNo, o.invoice_id AS InvoiceId,
+            SELECT o.order_id AS OrderId, o.book_no AS BookNo, o.invoice_id AS InvoiceId,
                    o.customerid AS CustomerId, o.customername AS CustomerName,
                    c.customerphone AS CustomerPhone,
                    ol.outlet_name AS OutletName, o.order_status AS OrderStatus,
@@ -165,7 +165,10 @@ public class FactoryOrderService
             LEFT JOIN customer c ON o.customerid=c.customerid
             INNER JOIN order_items oi ON o.order_id=oi.order_id
             WHERE oi.item_status = 'Sent to Factory'
-            ORDER BY oi.sent_to_factory_at ASC")).ToList();
+            GROUP BY o.order_id, o.book_no, o.invoice_id, o.customerid, o.customername,
+                     c.customerphone, ol.outlet_name, o.order_status,
+                     o.trial_date, o.delivery_date, o.order_notes, o.created_at
+            ORDER BY MIN(oi.sent_to_factory_at) ASC")).ToList();
 
         if (orders.Any())
         {
