@@ -49,7 +49,7 @@
                         <td style="font-weight:600">#@order.OrderId</td>
                         <td style="font-weight:600;color:var(--gold)">@(order.BookNo ?? "—")</td>
                         <td style="font-size:11px;color:#888">@order.BranchLabel</td>
-                        <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@item.Quantity</span></td>
+                        <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@(item.Quantity)</span></td>
                         <td>@if (!string.IsNullOrEmpty(item.GarmentType)){<span class="badge badge-info">@item.GarmentType</span>}else{<span style="color:var(--ink-faint)">—</span>}</td>
                         <td>@order.CustomerName</td>
                         <td style="color:var(--ink-muted);font-size:11px">@(order.OutletName ?? "—")</td>
@@ -119,7 +119,7 @@
                                     {
                                         <span class="badge badge-info" style="margin-left:6px">@item.GarmentType</span>
                                     }
-                                    <span style="color:var(--ink-muted);font-size:11px;margin-left:6px">x@item.Quantity</span>
+                                    <span style="color:var(--ink-muted);font-size:11px;margin-left:6px">x@(item.Quantity)</span>
                                 </div>
                                 <div style="display:flex;gap:6px;align-items:center">
                                     <span style="font-size:11px;color:var(--ink-faint)">Sent: @(item.SentToFactoryAt?.ToString("dd MMM, hh:mm tt") ?? "—")</span>

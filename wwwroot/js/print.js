@@ -634,6 +634,10 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#111;backgroun
     <div class="slip-meta-value">${esc(data.customerName)}</div>
   </div>
   <div class="slip-meta-cell">
+    <div class="slip-meta-label">Book No.</div>
+    <div class="slip-meta-value">${esc(data.bookNo || '—')}</div>
+  </div>
+  <div class="slip-meta-cell">
     <div class="slip-meta-label">Outlet</div>
     <div class="slip-meta-value">${esc(data.outlet || '—')}</div>
   </div>
