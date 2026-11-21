@@ -79,7 +79,8 @@ public class FactoryOrder
     public List<FactoryOrderItem> Items { get; set; } = new();
 
     public string ItemsSummary =>
-        Items.Any() ? string.Join(", ", Items.Select(i => $"{i.ProductName} ×{i.Quantity}")) : "—";
+        Items.Any() ? string.Join(", ", Items.Select(i =>
+            i.CancelledQty > 0 ? $"{i.ProductName} ×{i.ActiveQty} ({i.CancelledQty} cancelled)" : $"{i.ProductName} ×{i.Quantity}")) : "—";
 
     public IEnumerable<string> Categories =>
         Items.Select(i => i.ProCat).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct()!;
@@ -132,6 +133,8 @@ public class FactoryOrderItem
     public string ProductName { get; set; } = "";
     public string? ProCat { get; set; }
     public int Quantity { get; set; } = 1;
+    public int CancelledQty { get; set; }
+    public int ActiveQty => Quantity - CancelledQty;
     public string? ItemNotes { get; set; }
     public string ItemStatus { get; set; } = "Pending";
     public string? GarmentType { get; set; }
@@ -349,4 +352,17 @@ public class GarmentTypeSummary
     public int Returned { get; set; }
     public int Altered { get; set; }
     public int TrialDone { get; set; }
+}
+
+public class ProductionReportRow
+{
+    public string MonthKey { get; set; } = "";
+    public string MonthLabel { get; set; } = "";
+    public string GarmentType { get; set; } = "";
+    public string Category { get; set; } = "";
+    public int Quantity { get; set; }
+    public int Completed { get; set; }
+    public bool IsOTM => string.Equals(Category, "Unstitched", StringComparison.OrdinalIgnoreCase);
+    public bool IsStitching => string.Equals(Category, "Services", StringComparison.OrdinalIgnoreCase);
+    public string ServiceType => IsOTM ? "OTM" : IsStitching ? "Stitching" : "Other";
 }

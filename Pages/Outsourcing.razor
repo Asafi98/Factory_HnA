@@ -40,7 +40,7 @@
                     <tr>
                         <td style="font-weight:600">#@order.OrderId</td>
                         <td style="font-size:11px;color:#888">@order.BranchLabel</td>
-                        <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@item.Quantity</span></td>
+                        <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@(item.ActiveQty)</span>@if(item.CancelledQty > 0){<span style="color:var(--rust);font-size:10px;margin-left:3px">(@item.CancelledQty cancelled)</span>}</td>
                         <td><span class="badge badge-info">@(item.GarmentType ?? "—")</span></td>
                         <td>@order.CustomerName</td>
                         <td>
@@ -147,13 +147,12 @@
     IEnumerable<FactoryOrder> FilteredOrders => AllOrders
         .Where(o => string.IsNullOrEmpty(SearchText) ||
             o.CustomerName.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-            o.Items.Any(i => i.IsOutsourced && !string.IsNullOrEmpty(i.OutsourceVendor) &&
+            o.Items.Any(i => !string.IsNullOrEmpty(i.OutsourceVendor) &&
                 i.OutsourceVendor.Contains(SearchText, StringComparison.OrdinalIgnoreCase)))
         .Where(o => o.Items.Any(i => MatchFilter(i)));
 
     bool MatchFilter(FactoryOrderItem i)
     {
-        if (!i.IsOutsourced) return false;
         if (!string.IsNullOrEmpty(Filter) && i.ItemStatus != Filter) return false;
         if (!string.IsNullOrEmpty(GarmentFilter) && i.GarmentType != GarmentFilter) return false;
         if (i.ItemStatus is "Delivered" or "Cancelled") return false;
@@ -184,10 +183,10 @@
 
     async Task LoadOrders()
     {
-        AllOrders = await OrderSvc.GetAllOrdersAsync();
+        AllOrders = await OrderSvc.GetOutsourcedOrdersAsync();
         GarmentTypes = AllOrders
             .SelectMany(o => o.Items)
-            .Where(i => i.IsOutsourced && !string.IsNullOrEmpty(i.GarmentType))
+            .Where(i => !string.IsNullOrEmpty(i.GarmentType))
             .Select(i => i.GarmentType!)
             .Distinct().OrderBy(x => x).ToList();
     }

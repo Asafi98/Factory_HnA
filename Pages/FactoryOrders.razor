@@ -49,7 +49,7 @@
                         <td style="font-weight:600">#@order.OrderId</td>
                         <td style="font-weight:600;color:var(--gold)">@(order.BookNo ?? "—")</td>
                         <td style="font-size:11px;color:#888">@order.BranchLabel</td>
-                        <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@(item.Quantity)</span></td>
+                        <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@(item.ActiveQty)</span>@if(item.CancelledQty > 0){<span style="color:var(--rust);font-size:10px;margin-left:3px">(@item.CancelledQty cancelled)</span>}</td>
                         <td>@if (!string.IsNullOrEmpty(item.GarmentType)){<span class="badge badge-info">@item.GarmentType</span>}else{<span style="color:var(--ink-faint)">—</span>}</td>
                         <td>@order.CustomerName</td>
                         <td style="color:var(--ink-muted);font-size:11px">@(order.OutletName ?? "—")</td>

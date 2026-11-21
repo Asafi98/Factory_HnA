@@ -12,10 +12,11 @@ public class FactoryOrderService
 
     public async Task<List<FactoryOrder>> GetAllOrdersAsync()
     {
-        var malir   = await LoadBranchOrdersAsync(Branches.Malir,   "Malir Cantt Branch");
-        var bukhari = await LoadBranchOrdersAsync(Branches.Bukhari, "Bukhari Branch");
+        var malirTask   = LoadBranchOrdersAsync(Branches.Malir,   "Malir Cantt Branch");
+        var bukhariTask = LoadBranchOrdersAsync(Branches.Bukhari, "Bukhari Branch");
+        await Task.WhenAll(malirTask, bukhariTask);
 
-        return malir.Concat(bukhari)
+        return malirTask.Result.Concat(bukhariTask.Result)
             .Where(o => o.Categories.Any(c =>
                 string.Equals(c, "Unstitched", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(c, "Services", StringComparison.OrdinalIgnoreCase)))
@@ -43,6 +44,9 @@ public class FactoryOrderService
             LEFT JOIN outlets ol ON o.outlet_id = ol.outlet_id
             LEFT JOIN invoices i ON o.invoice_id = i.invoice_id
             LEFT JOIN customer c ON o.customerid = c.customerid
+            WHERE o.order_status <> 'Cancelled'
+              AND (i.invoice_id IS NULL OR i.is_void = 0)
+              AND (o.order_status <> 'Delivered' OR o.closed_at >= DATE_SUB(CURDATE(), INTERVAL 90 DAY))
             ORDER BY o.created_at DESC")).ToList();
 
         if (orders.Any())
@@ -52,7 +56,9 @@ public class FactoryOrderService
                 SELECT oi.order_item_id AS OrderItemId, oi.order_id AS OrderId,
                        oi.pro_id AS ProId, oi.product_name AS ProductName,
                        IFNULL(p.pro_cat, '') AS ProCat,
-                       oi.quantity AS Quantity, oi.item_notes AS ItemNotes,
+                       oi.quantity AS Quantity,
+                       IFNULL(oi.cancelled_qty, 0) AS CancelledQty,
+                       oi.item_notes AS ItemNotes,
                        IFNULL(oi.item_status, 'Pending') AS ItemStatus,
                        oi.garment_type AS GarmentType,
                        IFNULL(oi.is_outsourced, 0) AS IsOutsourced,
@@ -62,7 +68,8 @@ public class FactoryOrderService
                        oi.sent_to_shop_at AS SentToShopAt
                 FROM order_items oi
                 LEFT JOIN products p ON oi.pro_id = p.pro_id
-                WHERE oi.order_id IN @ids", new { ids })).ToList();
+                WHERE oi.order_id IN @ids
+                  AND oi.item_status <> 'Cancelled'", new { ids })).ToList();
 
             var itemsMap = items.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
             foreach (var o in orders)
@@ -145,9 +152,10 @@ public class FactoryOrderService
 
     public async Task<List<FactoryOrder>> GetSentToFactoryAsync()
     {
-        var malir   = await LoadSentToFactoryBranchAsync(Branches.Malir,   "Malir Cantt Branch");
-        var bukhari = await LoadSentToFactoryBranchAsync(Branches.Bukhari, "Bukhari Branch");
-        return malir.Concat(bukhari).OrderBy(o => o.CreatedAt).ToList();
+        var malirTask   = LoadSentToFactoryBranchAsync(Branches.Malir,   "Malir Cantt Branch");
+        var bukhariTask = LoadSentToFactoryBranchAsync(Branches.Bukhari, "Bukhari Branch");
+        await Task.WhenAll(malirTask, bukhariTask);
+        return malirTask.Result.Concat(bukhariTask.Result).OrderBy(o => o.CreatedAt).ToList();
     }
 
     private async Task<List<FactoryOrder>> LoadSentToFactoryBranchAsync(string branchKey, string branchLabel)
@@ -163,8 +171,11 @@ public class FactoryOrderService
             FROM orders o
             LEFT JOIN outlets ol ON o.outlet_id=ol.outlet_id
             LEFT JOIN customer c ON o.customerid=c.customerid
+            LEFT JOIN invoices i ON o.invoice_id=i.invoice_id
             INNER JOIN order_items oi ON o.order_id=oi.order_id
             WHERE oi.item_status = 'Sent to Factory'
+              AND o.order_status <> 'Cancelled'
+              AND (i.invoice_id IS NULL OR i.is_void = 0)
             GROUP BY o.order_id, o.book_no, o.invoice_id, o.customerid, o.customername,
                      c.customerphone, ol.outlet_name, o.order_status,
                      o.trial_date, o.delivery_date, o.order_notes, o.created_at
@@ -177,7 +188,9 @@ public class FactoryOrderService
                 SELECT oi.order_item_id AS OrderItemId, oi.order_id AS OrderId,
                        oi.pro_id AS ProId, oi.product_name AS ProductName,
                        IFNULL(p.pro_cat, '') AS ProCat,
-                       oi.quantity AS Quantity, oi.item_notes AS ItemNotes,
+                       oi.quantity AS Quantity,
+                       IFNULL(oi.cancelled_qty, 0) AS CancelledQty,
+                       oi.item_notes AS ItemNotes,
                        IFNULL(oi.item_status, 'Pending') AS ItemStatus,
                        oi.garment_type AS GarmentType,
                        IFNULL(oi.is_outsourced, 0) AS IsOutsourced,
@@ -206,9 +219,10 @@ public class FactoryOrderService
 
     public async Task<List<FactoryOrder>> GetOverduePaymentsAsync()
     {
-        var malir   = await LoadOverdueBranchAsync(Branches.Malir,   "Malir Cantt Branch");
-        var bukhari = await LoadOverdueBranchAsync(Branches.Bukhari, "Bukhari Branch");
-        return malir.Concat(bukhari).OrderBy(o => o.ClosedAt).ToList();
+        var malirTask   = LoadOverdueBranchAsync(Branches.Malir,   "Malir Cantt Branch");
+        var bukhariTask = LoadOverdueBranchAsync(Branches.Bukhari, "Bukhari Branch");
+        await Task.WhenAll(malirTask, bukhariTask);
+        return malirTask.Result.Concat(bukhariTask.Result).OrderBy(o => o.ClosedAt).ToList();
     }
 
     private async Task<List<FactoryOrder>> LoadOverdueBranchAsync(string branchKey, string branchLabel)
@@ -242,7 +256,7 @@ public class FactoryOrderService
     {
         var result = new Dictionary<string, GarmentTypeSummary>();
 
-        foreach (var key in new[] { Branches.Malir, Branches.Bukhari })
+        async Task LoadBranch(string key)
         {
             using var conn = _db.CreateForBranch(key);
             var rows = (await conn.QueryAsync<GarmentTypeSummary>(@"
@@ -254,26 +268,35 @@ public class FactoryOrderService
                        SUM(CASE WHEN oi.item_status='Resent for Fixing' THEN oi.quantity ELSE 0 END) AS Altered,
                        SUM(CASE WHEN oi.item_status='Trial Done' THEN oi.quantity ELSE 0 END) AS TrialDone
                 FROM order_items oi
+                INNER JOIN orders o ON oi.order_id = o.order_id
                 WHERE oi.garment_type IS NOT NULL
+                  AND oi.item_status <> 'Cancelled'
+                  AND o.order_status <> 'Cancelled'
+                  AND o.created_at >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
                 GROUP BY oi.garment_type")).ToList();
 
-            foreach (var r in rows)
+            lock (result)
             {
-                if (result.TryGetValue(r.GarmentType, out var existing))
+                foreach (var r in rows)
                 {
-                    existing.TotalOrdered += r.TotalOrdered;
-                    existing.Delivered += r.Delivered;
-                    existing.InProgress += r.InProgress;
-                    existing.Returned += r.Returned;
-                    existing.Altered += r.Altered;
-                    existing.TrialDone += r.TrialDone;
-                }
-                else
-                {
-                    result[r.GarmentType] = r;
+                    if (result.TryGetValue(r.GarmentType, out var existing))
+                    {
+                        existing.TotalOrdered += r.TotalOrdered;
+                        existing.Delivered += r.Delivered;
+                        existing.InProgress += r.InProgress;
+                        existing.Returned += r.Returned;
+                        existing.Altered += r.Altered;
+                        existing.TrialDone += r.TrialDone;
+                    }
+                    else
+                    {
+                        result[r.GarmentType] = r;
+                    }
                 }
             }
         }
+
+        await Task.WhenAll(LoadBranch(Branches.Malir), LoadBranch(Branches.Bukhari));
 
         return result.Values.OrderByDescending(g => g.TotalOrdered).ToList();
     }
@@ -398,27 +421,41 @@ public class FactoryOrderService
     {
         var stageDurations = new Dictionary<string, List<double>>();
 
-        foreach (var key in new[] { Branches.Malir, Branches.Bukhari })
+        async Task LoadBranch(string key)
         {
             using var conn = _db.CreateForBranch(key);
             var history = (await conn.QueryAsync<FactoryStatusHistory>(@"
                 SELECT history_id AS HistoryId, order_id AS OrderId,
                        stage AS Stage, changed_at AS ChangedAt
                 FROM factory_status_history
+                WHERE changed_at >= DATE_SUB(CURDATE(), INTERVAL 90 DAY)
                 ORDER BY order_id, changed_at, history_id")).ToList();
 
+            var localDurations = new Dictionary<string, List<double>>();
             foreach (var group in history.GroupBy(h => h.OrderId))
             {
                 var entries = group.OrderBy(h => h.ChangedAt).ThenBy(h => h.HistoryId).ToList();
                 for (int i = 0; i < entries.Count - 1; i++)
                 {
                     var days = (entries[i + 1].ChangedAt - entries[i].ChangedAt).TotalDays;
-                    if (!stageDurations.ContainsKey(entries[i].Stage))
-                        stageDurations[entries[i].Stage] = new();
-                    stageDurations[entries[i].Stage].Add(days);
+                    if (!localDurations.ContainsKey(entries[i].Stage))
+                        localDurations[entries[i].Stage] = new();
+                    localDurations[entries[i].Stage].Add(days);
+                }
+            }
+
+            lock (stageDurations)
+            {
+                foreach (var kv in localDurations)
+                {
+                    if (!stageDurations.ContainsKey(kv.Key))
+                        stageDurations[kv.Key] = new();
+                    stageDurations[kv.Key].AddRange(kv.Value);
                 }
             }
         }
+
+        await Task.WhenAll(LoadBranch(Branches.Malir), LoadBranch(Branches.Bukhari));
 
         return FactoryStages.All
             .Where(s => stageDurations.ContainsKey(s))
@@ -453,5 +490,131 @@ public class FactoryOrderService
         await conn.ExecuteAsync(
             "UPDATE orders SET book_no=NULLIF(@bno, '') WHERE order_id=@id",
             new { bno = bookNo?.Trim() ?? "", id = orderId });
+    }
+
+    // ── Production Report (month-wise, by garment type, OTM vs Stitching) ──
+
+    public async Task<List<ProductionReportRow>> GetProductionReportAsync(int months = 6)
+    {
+        var result = new Dictionary<string, ProductionReportRow>();
+
+        async Task LoadBranch(string key)
+        {
+            using var conn = _db.CreateForBranch(key);
+            var rows = (await conn.QueryAsync<ProductionReportRow>(@"
+                SELECT DATE_FORMAT(o.created_at, '%Y-%m') AS MonthKey,
+                       DATE_FORMAT(o.created_at, '%b %Y') AS MonthLabel,
+                       IFNULL(oi.garment_type, 'Other') AS GarmentType,
+                       IFNULL(p.pro_cat, '') AS Category,
+                       SUM(oi.quantity) AS Quantity,
+                       SUM(CASE WHEN oi.item_status = 'Delivered' OR oi.item_status = 'Sent to Shop' THEN oi.quantity ELSE 0 END) AS Completed
+                FROM order_items oi
+                INNER JOIN orders o ON oi.order_id = o.order_id
+                LEFT JOIN products p ON oi.pro_id = p.pro_id
+                WHERE o.order_status <> 'Cancelled'
+                  AND oi.item_status <> 'Cancelled'
+                  AND o.created_at >= DATE_SUB(CURDATE(), INTERVAL @m MONTH)
+                GROUP BY DATE_FORMAT(o.created_at, '%Y-%m'),
+                         DATE_FORMAT(o.created_at, '%b %Y'),
+                         IFNULL(oi.garment_type, 'Other'),
+                         IFNULL(p.pro_cat, '')
+                ORDER BY MonthKey DESC, GarmentType", new { m = months })).ToList();
+
+            lock (result)
+            {
+                foreach (var r in rows)
+                {
+                    var compositeKey = $"{r.MonthKey}|{r.GarmentType}|{r.Category}";
+                    if (result.TryGetValue(compositeKey, out var existing))
+                    {
+                        existing.Quantity += r.Quantity;
+                        existing.Completed += r.Completed;
+                    }
+                    else
+                    {
+                        result[compositeKey] = r;
+                    }
+                }
+            }
+        }
+
+        await Task.WhenAll(LoadBranch(Branches.Malir), LoadBranch(Branches.Bukhari));
+
+        return result.Values
+            .OrderByDescending(r => r.MonthKey)
+            .ThenBy(r => r.GarmentType)
+            .ToList();
+    }
+
+    // ── Outsourced orders (matches by garment_type against active outsource_settings) ──
+
+    public async Task<List<FactoryOrder>> GetOutsourcedOrdersAsync()
+    {
+        var malirTask   = LoadOutsourcedBranchAsync(Branches.Malir,   "Malir Cantt Branch");
+        var bukhariTask = LoadOutsourcedBranchAsync(Branches.Bukhari, "Bukhari Branch");
+        await Task.WhenAll(malirTask, bukhariTask);
+
+        return malirTask.Result.Concat(bukhariTask.Result)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToList();
+    }
+
+    private async Task<List<FactoryOrder>> LoadOutsourcedBranchAsync(string branchKey, string branchLabel)
+    {
+        using var conn = _db.CreateForBranch(branchKey);
+
+        var orders = (await conn.QueryAsync<FactoryOrder>(@"
+            SELECT DISTINCT o.order_id AS OrderId, o.book_no AS BookNo, o.invoice_id AS InvoiceId,
+                   o.customerid AS CustomerId, o.customername AS CustomerName,
+                   c.customerphone AS CustomerPhone,
+                   ol.outlet_name AS OutletName, o.order_status AS OrderStatus,
+                   o.factory_stage AS FactoryStage,
+                   o.trial_date AS TrialDate, o.delivery_date AS DeliveryDate,
+                   o.order_notes AS OrderNotes, o.created_at AS CreatedAt,
+                   o.closed_at AS ClosedAt
+            FROM orders o
+            LEFT JOIN outlets ol ON o.outlet_id = ol.outlet_id
+            LEFT JOIN invoices i ON o.invoice_id = i.invoice_id
+            LEFT JOIN customer c ON o.customerid = c.customerid
+            INNER JOIN order_items oi ON o.order_id = oi.order_id
+            INNER JOIN outsource_settings os ON oi.garment_type = os.garment_type AND os.is_active = 1
+            WHERE o.order_status <> 'Cancelled'
+              AND (i.invoice_id IS NULL OR i.is_void = 0)
+              AND oi.item_status <> 'Cancelled'
+            ORDER BY o.created_at DESC")).ToList();
+
+        if (orders.Any())
+        {
+            var ids = orders.Select(o => o.OrderId).ToList();
+            var items = (await conn.QueryAsync<FactoryOrderItem>(@"
+                SELECT oi.order_item_id AS OrderItemId, oi.order_id AS OrderId,
+                       oi.pro_id AS ProId, oi.product_name AS ProductName,
+                       IFNULL(p.pro_cat, '') AS ProCat,
+                       oi.quantity AS Quantity,
+                       IFNULL(oi.cancelled_qty, 0) AS CancelledQty,
+                       oi.item_notes AS ItemNotes,
+                       IFNULL(oi.item_status, 'Pending') AS ItemStatus,
+                       oi.garment_type AS GarmentType,
+                       IFNULL(oi.is_outsourced, 0) AS IsOutsourced,
+                       oi.outsource_vendor AS OutsourceVendor,
+                       oi.sent_to_factory_at AS SentToFactoryAt,
+                       oi.factory_accepted_at AS FactoryAcceptedAt,
+                       oi.sent_to_shop_at AS SentToShopAt
+                FROM order_items oi
+                LEFT JOIN products p ON oi.pro_id = p.pro_id
+                INNER JOIN outsource_settings os ON oi.garment_type = os.garment_type AND os.is_active = 1
+                WHERE oi.order_id IN @ids
+                  AND oi.item_status <> 'Cancelled'", new { ids })).ToList();
+
+            var itemsMap = items.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
+            foreach (var o in orders)
+            {
+                o.Items = itemsMap.TryGetValue(o.OrderId, out var oi) ? oi : new();
+                o.BranchKey = branchKey;
+                o.BranchLabel = branchLabel;
+            }
+        }
+
+        return orders;
     }
 }

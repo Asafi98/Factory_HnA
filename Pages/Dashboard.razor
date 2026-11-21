@@ -272,6 +272,67 @@ else
         </div>
     }
 
+    @if (ProductionReport.Any())
+    {
+        <div class="card">
+            <span class="card-title">Production Report (Last 6 Months — OTM vs Stitching)</span>
+            <p style="font-size:12px;color:#888;margin:0 0 12px">OTM = Fabric from shop + Stitching (Unstitched category) · Stitching = Customer fabric + our stitching (Services category)</p>
+            @foreach (var monthGroup in ProductionReport.GroupBy(r => new { r.MonthKey, r.MonthLabel }).OrderByDescending(g => g.Key.MonthKey))
+            {
+                <div style="margin-bottom:16px">
+                    <div style="font-weight:600;font-size:14px;color:var(--ink);margin-bottom:6px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08)">@monthGroup.Key.MonthLabel</div>
+                    <div class="table-wrap"><table>
+                        <thead><tr><th>Garment Type</th><th>OTM Qty</th><th>OTM Done</th><th>Stitching Qty</th><th>Stitching Done</th><th>Total</th><th>Completed</th></tr></thead>
+                        <tbody>
+                            @{
+                                var garmentGroups = monthGroup
+                                    .GroupBy(r => r.GarmentType)
+                                    .OrderByDescending(g => g.Sum(r => r.Quantity));
+                            }
+                            @foreach (var gGroup in garmentGroups)
+                            {
+                                var otm = gGroup.Where(r => r.IsOTM);
+                                var stitch = gGroup.Where(r => r.IsStitching);
+                                var otmQty = otm.Sum(r => r.Quantity);
+                                var otmDone = otm.Sum(r => r.Completed);
+                                var stitchQty = stitch.Sum(r => r.Quantity);
+                                var stitchDone = stitch.Sum(r => r.Completed);
+                                var totalQty = gGroup.Sum(r => r.Quantity);
+                                var totalDone = gGroup.Sum(r => r.Completed);
+                                <tr>
+                                    <td style="font-weight:600">@gGroup.Key</td>
+                                    <td style="color:#60aaff">@otmQty</td>
+                                    <td style="color:#25c850">@otmDone</td>
+                                    <td style="color:#ffd12c">@stitchQty</td>
+                                    <td style="color:#25c850">@stitchDone</td>
+                                    <td style="font-weight:700">@totalQty</td>
+                                    <td style="font-weight:700;color:#25c850">@totalDone</td>
+                                </tr>
+                            }
+                            @{
+                                var monthOtmQty = monthGroup.Where(r => r.IsOTM).Sum(r => r.Quantity);
+                                var monthOtmDone = monthGroup.Where(r => r.IsOTM).Sum(r => r.Completed);
+                                var monthStitchQty = monthGroup.Where(r => r.IsStitching).Sum(r => r.Quantity);
+                                var monthStitchDone = monthGroup.Where(r => r.IsStitching).Sum(r => r.Completed);
+                                var monthTotal = monthGroup.Sum(r => r.Quantity);
+                                var monthDone = monthGroup.Sum(r => r.Completed);
+                            }
+                            <tr style="border-top:2px solid rgba(255,255,255,0.1);font-weight:700">
+                                <td>Month Total</td>
+                                <td style="color:#60aaff">@monthOtmQty</td>
+                                <td style="color:#25c850">@monthOtmDone</td>
+                                <td style="color:#ffd12c">@monthStitchQty</td>
+                                <td style="color:#25c850">@monthStitchDone</td>
+                                <td>@monthTotal</td>
+                                <td style="color:#25c850">@monthDone</td>
+                            </tr>
+                        </tbody>
+                    </table></div>
+                </div>
+            }
+        </div>
+    }
+
     @if (PaymentReminders.Any())
     {
         <div class="card" style="border-left:3px solid #ff4040">
@@ -316,11 +377,21 @@ else
     List<StageAverage> StageAverages = new();
     List<GarmentTypeSummary> GarmentSummary = new();
     List<FactoryOrder> PaymentReminders = new();
+    List<ProductionReportRow> ProductionReport = new();
     int YestReceived, YestCompleted, YestTotalChanges;
 
     protected override async Task OnInitializedAsync()
     {
-        AllOrders = await OrderSvc.GetAllOrdersAsync();
+        var ordersTask = OrderSvc.GetAllOrdersAsync();
+        var stageTask = OrderSvc.GetStageAveragesAsync();
+        var garmentTask = OrderSvc.GetGarmentTypeSummaryAsync();
+        var paymentTask = OrderSvc.GetOverduePaymentsAsync();
+        var throughputTask = OrderSvc.GetThroughputAsync(DateTime.Today.AddDays(-1));
+        var prodReportTask = OrderSvc.GetProductionReportAsync(6);
+
+        await Task.WhenAll(ordersTask, stageTask, garmentTask, paymentTask, throughputTask, prodReportTask);
+
+        AllOrders = ordersTask.Result;
         ActiveOrders = AllOrders.Where(o => o.OrderStatus is not "Delivered" and not "Cancelled").ToList();
 
         TodaysTrials = ActiveOrders
@@ -337,11 +408,12 @@ else
                 && o.DeliveryDate.Value.Date <= DateTime.Today.AddDays(7))
             .ToList();
 
-        StageAverages = await OrderSvc.GetStageAveragesAsync();
-        GarmentSummary = await OrderSvc.GetGarmentTypeSummaryAsync();
-        PaymentReminders = await OrderSvc.GetOverduePaymentsAsync();
+        StageAverages = stageTask.Result;
+        GarmentSummary = garmentTask.Result;
+        PaymentReminders = paymentTask.Result;
+        ProductionReport = prodReportTask.Result;
 
-        var (r, c, t) = await OrderSvc.GetThroughputAsync(DateTime.Today.AddDays(-1));
+        var (r, c, t) = throughputTask.Result;
         YestReceived = r; YestCompleted = c; YestTotalChanges = t;
 
         Loading = false;
