@@ -21,6 +21,11 @@
 <div class="card" style="padding:12px;margin-bottom:14px">
     <div style="display:flex;gap:10px;flex-wrap:wrap">
         <input @ref="_searchRef" class="form-control" style="flex:1;min-width:180px" placeholder="Search by customer..." />
+        <select class="form-control" style="width:180px" @onchange="e => { BranchFilter = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }">
+            <option value="">All Branches</option>
+            <option value="malir">Malir Cantt</option>
+            <option value="bukhari">Bukhari</option>
+        </select>
         <select class="form-control" style="width:180px" @onchange="e => { CategoryFilter = e.Value?.ToString() ?? string.Empty; ApplyFilter(); }">
             <option value="">All Categories</option>
             @foreach (var c in Categories) { <option value="@c">@c</option> }
@@ -30,7 +35,7 @@
             @foreach (var o in Outlets) { <option value="@o">@o</option> }
             <option value="__doorstep">Door Step Sizing</option>
         </select>
-        <button class="btn-print" @onclick='() => JS.InvokeVoidAsync("printReport","factoryPrintArea")'>🖨️ Print List</button>
+        <button class="btn-print" @onclick='() => JS.InvokeVoidAsync("printReport","factoryPrintArea")'>Print List</button>
     </div>
 </div>
 
@@ -40,7 +45,7 @@
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Stage</th><th>Alerts</th><th>Order#</th><th>Book No.</th><th>Branch</th><th>Customer</th><th>Outlet</th><th>Item</th><th>Qty</th><th>Trial</th><th>Delivery</th><th class="no-print">Actions</th></tr>
+                <tr><th>Stage</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Branch</th><th>Location</th><th>Item</th><th>Qty</th><th>Trial</th><th>Delivery</th><th>Alerts</th><th class="no-print">Actions</th></tr>
             </thead>
             <tbody>
                 @foreach (var ord in Filtered)
@@ -51,21 +56,21 @@
                     {
                         <tr style="@(o.IsOverdue ? "background:rgba(255,60,60,0.08);" : o.IsStuck ? "background:rgba(255,160,40,0.08);" : "")">
                             <td>@StageBadge(o.FactoryStage)</td>
+                            <td style="font-weight:600">#@o.OrderId</td>
+                            <td style="font-weight:600;color:var(--gold)">@(o.BookNo ?? "—")</td>
+                            <td style="font-weight:500">@o.CustomerName</td>
+                            <td style="font-size:12px;color:#888">@o.BranchLabel@(o.IsDoorstep ? " 🏠" : "")</td>
+                            <td>@(o.OutletName ?? "—")</td>
+                            <td style="font-size:12px">@item.ProductName@(!string.IsNullOrEmpty(item.ItemNotes) ? $" ({item.ItemNotes})" : "")</td>
+                            <td style="text-align:center;font-size:12px">@(item.Quantity > 0 ? item.Quantity.ToString() : "—")</td>
+                            <td style="font-size:12px">@(o.TrialDate?.ToString("dd MMM") ?? "—")</td>
+                            <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
                             <td style="white-space:nowrap;font-size:11px">
                                 @if (o.IsDeliveryOverdue) { <span class="badge badge-danger">DELIVERY +@(o.DaysDeliveryOverdue)d</span> }
                                 @if (o.IsTrialOverdue) { <span class="badge badge-danger">TRIAL +@(o.DaysTrialOverdue)d</span> }
                                 @if (o.IsStuck) { <span class="badge badge-warning">STUCK @(o.DaysStuck)d</span> }
                                 @if (!o.IsOverdue && !o.IsStuck) { <span style="color:#555">—</span> }
                             </td>
-                            <td style="font-weight:600">#@o.OrderId</td>
-                            <td style="font-weight:600;color:var(--gold)">@(o.BookNo ?? "—")</td>
-                            <td style="font-size:12px;color:#888">@o.BranchLabel@(o.IsDoorstep ? " 🏠" : "")</td>
-                            <td style="font-weight:500">@o.CustomerName</td>
-                            <td>@(o.OutletName ?? "—")</td>
-                            <td style="font-size:12px">@item.ProductName@(!string.IsNullOrEmpty(item.ItemNotes) ? $" ({item.ItemNotes})" : "")</td>
-                            <td style="text-align:center;font-size:12px">@(item.Quantity > 0 ? item.Quantity.ToString() : "—")</td>
-                            <td style="font-size:12px">@(o.TrialDate?.ToString("dd MMM") ?? "—")</td>
-                            <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
                             <td class="no-print" style="white-space:nowrap">
                                 <button class="btn btn-ghost btn-sm" @onclick="() => OpenOrder(o)">View / Print</button>
                                 <select class="form-control" style="width:150px;padding:4px 6px;font-size:12px;display:inline-block;margin-left:4px"
@@ -183,7 +188,7 @@
     List<string> Categories = new(), Outlets = new();
     FactoryOrder? SelOrder;
     List<FactoryStatusHistory> History = new();
-    string Search = "", CategoryFilter = "", LocationFilter = "", StageFilter = "", Msg = "";
+    string Search = "", CategoryFilter = "", LocationFilter = "", StageFilter = "", BranchFilter = "", Msg = "";
     bool IsErr;
 
     ElementReference _searchRef;
@@ -238,6 +243,7 @@
     void ApplyFilter() => Filtered = AllOrders.Where(o =>
         (StageFilter == "" || (StageFilter == "__none" ? string.IsNullOrEmpty(o.FactoryStage) : o.FactoryStage == StageFilter)) &&
         (string.IsNullOrEmpty(Search) || o.CustomerName.Contains(Search, StringComparison.OrdinalIgnoreCase)) &&
+        (string.IsNullOrEmpty(BranchFilter) || string.Equals(o.BranchKey, BranchFilter, StringComparison.OrdinalIgnoreCase)) &&
         (string.IsNullOrEmpty(CategoryFilter) || o.Categories.Any(c => string.Equals(c, CategoryFilter, StringComparison.OrdinalIgnoreCase))) &&
         (string.IsNullOrEmpty(LocationFilter) ||
             (LocationFilter == "__doorstep" ? o.IsDoorstep : o.OutletName == LocationFilter))

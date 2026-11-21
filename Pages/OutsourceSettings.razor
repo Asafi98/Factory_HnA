@@ -21,7 +21,7 @@
             {
                 <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-s,6px)">
                     <span style="font-weight:500">@s.GarmentType</span>
-                    <button class="btn btn-ghost btn-sm" style="color:var(--rust)" @onclick="() => Remove(s.Id)">Remove</button>
+                    <button class="btn btn-ghost btn-sm" style="color:var(--rust)" @onclick="() => Remove(s.GarmentType)">Remove</button>
                 </div>
             }
         </div>
@@ -69,9 +69,9 @@
         Settings = await OrderSvc.GetOutsourceSettingsAsync();
     }
 
-    async Task Remove(int id)
+    async Task Remove(string garmentType)
     {
-        await OrderSvc.RemoveOutsourceSettingAsync(id);
+        await OrderSvc.RemoveOutsourceSettingAsync(garmentType);
         Settings = await OrderSvc.GetOutsourceSettingsAsync();
     }
 

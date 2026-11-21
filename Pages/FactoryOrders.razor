@@ -81,9 +81,9 @@
                     </tr>
                 }
             }
-            @if (!FilteredOrders.Any())
+            @if (!FilteredOrders.SelectMany(o => o.Items.Where(i => MatchFilter(i))).Any())
             {
-                <tr><td colspan="12" style="text-align:center;color:var(--ink-faint);padding:24px">No items found.</td></tr>
+                <tr><td colspan="13" style="text-align:center;color:var(--ink-faint);padding:24px">No items found.</td></tr>
             }
         </tbody>
     </table></div>
@@ -193,8 +193,6 @@
     {
         if (!string.IsNullOrEmpty(Filter) && i.ItemStatus != Filter) return false;
         if (!string.IsNullOrEmpty(GarmentFilter) && i.GarmentType != GarmentFilter) return false;
-        if (string.IsNullOrEmpty(Filter) &&
-            i.ItemStatus is "Pending" or "Sent to Factory" or "Delivered" or "Cancelled") return false;
         return true;
     }
 

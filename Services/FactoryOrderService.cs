@@ -328,14 +328,14 @@ public class FactoryOrderService
         }
     }
 
-    public async Task RemoveOutsourceSettingAsync(int id)
+    public async Task RemoveOutsourceSettingAsync(string garmentType)
     {
         foreach (var key in new[] { Branches.Malir, Branches.Bukhari })
         {
             using var conn = _db.CreateForBranch(key);
             await conn.ExecuteAsync(
-                "UPDATE outsource_settings SET is_active=0 WHERE id=@id",
-                new { id });
+                "UPDATE outsource_settings SET is_active=0 WHERE garment_type=@gt",
+                new { gt = garmentType });
         }
     }
 
