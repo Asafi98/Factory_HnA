@@ -57,7 +57,22 @@
                         <tr style="@(o.IsOverdue ? "background:rgba(255,60,60,0.08);" : o.IsStuck ? "background:rgba(255,160,40,0.08);" : "")">
                             <td>@StageBadge(o.FactoryStage)</td>
                             <td style="font-weight:600">#@o.OrderId</td>
-                            <td style="font-weight:600;color:var(--gold)">@(o.BookNo ?? "—")</td>
+                            <td style="font-weight:600;color:var(--gold)">
+                                @if (EditingBookNoOrderId == o.OrderId && EditingBookNoBranch == o.BranchKey)
+                                {
+                                    <div style="display:flex;gap:4px;align-items:center">
+                                        <input class="form-control" style="width:80px;padding:2px 6px;font-size:12px"
+                                               @bind="BookNoInput"
+                                               @onkeydown="@(async e => { if (e.Key == "Enter") await SaveBookNo(o); })" />
+                                        <button class="btn btn-primary btn-sm" style="padding:2px 8px" @onclick="() => SaveBookNo(o)">OK</button>
+                                        <button class="btn btn-ghost btn-sm" style="padding:2px 6px" @onclick="CancelEditBookNo">✕</button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span style="cursor:pointer;text-decoration:underline dotted" @onclick="() => StartEditBookNo(o)">@(o.BookNo ?? "—")</span>
+                                }
+                            </td>
                             <td style="font-weight:500">@o.CustomerName</td>
                             <td style="font-size:12px;color:#888">@o.BranchLabel@(o.IsDoorstep ? " 🏠" : "")</td>
                             <td>@(o.OutletName ?? "—")</td>
@@ -103,7 +118,21 @@
             <div class="modal-body">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
                     <div class="info-row"><span class="lbl">Factory Stage</span><span class="val">@StageBadge(SelOrder.FactoryStage)</span></div>
-                    <div class="info-row"><span class="lbl">Book No.</span><span class="val" style="font-weight:600;color:var(--gold)">@(SelOrder.BookNo ?? "—")</span></div>
+                    <div class="info-row"><span class="lbl">Book No.</span><span class="val" style="font-weight:600;color:var(--gold)">
+                        @if (EditingBookNoOrderId == SelOrder.OrderId && EditingBookNoBranch == SelOrder.BranchKey)
+                        {
+                            <span style="display:inline-flex;gap:4px;align-items:center">
+                                <input class="form-control" style="width:80px;padding:2px 6px;font-size:13px" @bind="BookNoInput"
+                                       @onkeydown="@(async e => { if (e.Key == "Enter") await SaveBookNo(SelOrder); })" />
+                                <button class="btn btn-primary btn-sm" style="padding:2px 8px" @onclick="() => SaveBookNo(SelOrder)">OK</button>
+                                <button class="btn btn-ghost btn-sm" style="padding:2px 6px" @onclick="CancelEditBookNo">✕</button>
+                            </span>
+                        }
+                        else
+                        {
+                            <span style="cursor:pointer;text-decoration:underline dotted" @onclick="() => StartEditBookNo(SelOrder)">@(SelOrder.BookNo ?? "— Click to set —")</span>
+                        }
+                    </span></div>
                     <div class="info-row"><span class="lbl">Shop Status</span><span class="val">@SelOrder.OrderStatus</span></div>
                     <div class="info-row"><span class="lbl">Branch</span><span class="val">@SelOrder.BranchLabel@(SelOrder.IsDoorstep ? " (Door Step)" : "")</span></div>
                     <div class="info-row"><span class="lbl">Outlet</span><span class="val">@(SelOrder.OutletName ?? "—")</span></div>
@@ -190,6 +219,9 @@
     List<FactoryStatusHistory> History = new();
     string Search = "", CategoryFilter = "", LocationFilter = "", StageFilter = "", BranchFilter = "", Msg = "";
     bool IsErr;
+    int? EditingBookNoOrderId;
+    string? EditingBookNoBranch;
+    string BookNoInput = "";
 
     ElementReference _searchRef;
     DotNetObjectReference<Index>? _dotNetRef;
@@ -326,6 +358,34 @@
     {
         if (on) SelectedMeasurements.Add(name);
         else    SelectedMeasurements.Remove(name);
+    }
+
+    void StartEditBookNo(FactoryOrder o)
+    {
+        EditingBookNoOrderId = o.OrderId;
+        EditingBookNoBranch = o.BranchKey;
+        BookNoInput = o.BookNo ?? "";
+    }
+
+    void CancelEditBookNo()
+    {
+        EditingBookNoOrderId = null;
+        EditingBookNoBranch = null;
+        BookNoInput = "";
+    }
+
+    async Task SaveBookNo(FactoryOrder o)
+    {
+        try
+        {
+            await OrderSvc.UpdateBookNoAsync(o.OrderId, o.BranchKey, BookNoInput);
+            o.BookNo = string.IsNullOrWhiteSpace(BookNoInput) ? null : BookNoInput.Trim();
+            Msg = $"Book No. updated for Order #{o.OrderId}."; IsErr = false;
+        }
+        catch (Exception ex) { Msg = ex.Message; IsErr = true; }
+        EditingBookNoOrderId = null;
+        EditingBookNoBranch = null;
+        BookNoInput = "";
     }
 
     async Task UpdateStage(FactoryOrder o, string stage)
