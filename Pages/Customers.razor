@@ -256,15 +256,27 @@
         var branch = SelCustomer.BranchKey;
         var id = SelCustomer.CustomerId;
 
-        Shirt = await MeasureSvc.GetShirtAsync(branch, id) ?? new ShirtMeasurement { CustomerId = id };
-        Pant = await MeasureSvc.GetPantAsync(branch, id) ?? new PantMeasurement { CustomerId = id };
-        Wc = await MeasureSvc.GetWaistcoatAsync(branch, id) ?? new WaistcoatMeasurement { CustomerId = id };
-        SK = await MeasureSvc.GetShalwarKameezAsync(branch, id) ?? new ShalwarKameezMeasurement { CustomerId = id };
-        Coat = await MeasureSvc.GetCoatAsync(branch, id, "Coat") ?? new CoatMeasurement { CustomerId = id, CoatType = "Coat" };
-        Suit = await MeasureSvc.GetSuit2PieceAsync(branch, id) ?? new Suit2PieceMeasurement { CustomerId = id };
+        var shirtTask = MeasureSvc.GetShirtAsync(branch, id);
+        var pantTask = MeasureSvc.GetPantAsync(branch, id);
+        var wcTask = MeasureSvc.GetWaistcoatAsync(branch, id);
+        var skTask = MeasureSvc.GetShalwarKameezAsync(branch, id);
+        var coatTask = MeasureSvc.GetCoatAsync(branch, id, "Coat");
+        var suitTask = MeasureSvc.GetSuit2PieceAsync(branch, id);
+        var scanTasks = AllGarmentTypes.ToDictionary(g => g, g => MeasureSvc.GetScanAsync(branch, id, g));
+
+        await Task.WhenAll(
+            shirtTask, pantTask, wcTask, skTask, coatTask, suitTask,
+            Task.WhenAll(scanTasks.Values));
+
+        Shirt = shirtTask.Result ?? new ShirtMeasurement { CustomerId = id };
+        Pant = pantTask.Result ?? new PantMeasurement { CustomerId = id };
+        Wc = wcTask.Result ?? new WaistcoatMeasurement { CustomerId = id };
+        SK = skTask.Result ?? new ShalwarKameezMeasurement { CustomerId = id };
+        Coat = coatTask.Result ?? new CoatMeasurement { CustomerId = id, CoatType = "Coat" };
+        Suit = suitTask.Result ?? new Suit2PieceMeasurement { CustomerId = id };
 
         foreach (var g in AllGarmentTypes)
-            Scans[g] = await MeasureSvc.GetScanAsync(branch, id, g);
+            Scans[g] = scanTasks[g].Result;
     }
 
     async Task LoadCoat()

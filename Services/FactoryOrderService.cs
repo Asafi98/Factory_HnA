@@ -38,12 +38,14 @@ public class FactoryOrderService
                    o.order_notes AS OrderNotes, o.created_at AS CreatedAt,
                    o.closed_at AS ClosedAt,
                    IFNULL(i.is_doorstep, 0) AS IsDoorstep,
-                   (SELECT MAX(fsh.changed_at) FROM factory_status_history fsh
-                    WHERE fsh.order_id = o.order_id) AS LastStageChangeAt
+                   lsc.last_change AS LastStageChangeAt
             FROM orders o
             LEFT JOIN outlets ol ON o.outlet_id = ol.outlet_id
             LEFT JOIN invoices i ON o.invoice_id = i.invoice_id
             LEFT JOIN customer c ON o.customerid = c.customerid
+            LEFT JOIN (SELECT order_id, MAX(changed_at) AS last_change
+                       FROM factory_status_history GROUP BY order_id) lsc
+                ON o.order_id = lsc.order_id
             WHERE o.order_status <> 'Cancelled'
               AND (i.invoice_id IS NULL OR i.is_void = 0)
               AND (o.order_status <> 'Delivered' OR o.closed_at >= DATE_SUB(CURDATE(), INTERVAL 90 DAY))
@@ -471,16 +473,23 @@ public class FactoryOrderService
     public async Task<(int Received, int Completed, int TotalChanges)> GetThroughputAsync(DateTime date)
     {
         int received = 0, completed = 0, totalChanges = 0;
-        foreach (var key in new[] { Branches.Malir, Branches.Bukhari })
+        var lockObj = new object();
+
+        async Task LoadBranch(string key)
         {
             using var conn = _db.CreateForBranch(key);
             var rows = (await conn.QueryAsync<string>(
                 "SELECT stage FROM factory_status_history WHERE changed_at >= @d AND changed_at < @d2",
                 new { d = date.Date, d2 = date.Date.AddDays(1) })).ToList();
-            totalChanges += rows.Count;
-            received += rows.Count(s => s == FactoryStages.Received);
-            completed += rows.Count(s => s == FactoryStages.SentToShop);
+            lock (lockObj)
+            {
+                totalChanges += rows.Count;
+                received += rows.Count(s => s == FactoryStages.Received);
+                completed += rows.Count(s => s == FactoryStages.SentToShop);
+            }
         }
+
+        await Task.WhenAll(LoadBranch(Branches.Malir), LoadBranch(Branches.Bukhari));
         return (received, completed, totalChanges);
     }
 

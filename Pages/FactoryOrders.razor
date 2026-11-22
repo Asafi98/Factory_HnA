@@ -1,5 +1,6 @@
 @page "/factory-orders"
 @inject FactoryOrderService OrderSvc
+@inject FactoryCacheService CacheSvc
 @inject FactoryAuthService AuthSvc
 
 <div class="page-header">
@@ -215,8 +216,8 @@
 
     async Task LoadOrders()
     {
-        AllOrders = await OrderSvc.GetAllOrdersAsync();
-        PendingAcceptance = await OrderSvc.GetSentToFactoryAsync();
+        AllOrders = await CacheSvc.GetAllOrdersAsync();
+        PendingAcceptance = await CacheSvc.GetSentToFactoryAsync();
         GarmentTypes = AllOrders
             .SelectMany(o => o.Items)
             .Where(i => !string.IsNullOrEmpty(i.GarmentType))
@@ -228,6 +229,7 @@
     {
         await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, newStatus,
             AuthSvc.LoggedInUser ?? "factory");
+        CacheSvc.Invalidate();
         await LoadOrders();
     }
 
@@ -235,7 +237,8 @@
     {
         await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, "Arrived at Factory",
             AuthSvc.LoggedInUser ?? "factory");
-        PendingAcceptance = await OrderSvc.GetSentToFactoryAsync();
+        CacheSvc.Invalidate();
+        PendingAcceptance = await CacheSvc.GetSentToFactoryAsync();
         if (!PendingAcceptance.Any()) ShowIncoming = false;
         await LoadOrders();
     }

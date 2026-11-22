@@ -33,8 +33,11 @@ builder.Services.AddServerSideBlazor()
         options.MaximumReceiveMessageSize = 15 * 1024 * 1024; // 15 MB — measurement scan previews
     });
 
+builder.Services.AddMemoryCache();
+
 builder.Services.AddScoped<FactoryAuthService>();
 builder.Services.AddScoped<FactoryOrderService>();
+builder.Services.AddScoped<FactoryCacheService>();
 builder.Services.AddScoped<FactoryMeasurementService>();
 builder.Services.AddScoped<FactoryLookupService>();
 builder.Services.AddScoped<FactoryCustomerService>();

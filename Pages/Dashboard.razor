@@ -1,5 +1,5 @@
 @page "/dashboard"
-@inject FactoryOrderService OrderSvc
+@inject FactoryCacheService CacheSvc
 @inject FactoryAuthService AuthSvc
 
 <div class="page-header">
@@ -382,12 +382,12 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        var ordersTask = OrderSvc.GetAllOrdersAsync();
-        var stageTask = OrderSvc.GetStageAveragesAsync();
-        var garmentTask = OrderSvc.GetGarmentTypeSummaryAsync();
-        var paymentTask = OrderSvc.GetOverduePaymentsAsync();
-        var throughputTask = OrderSvc.GetThroughputAsync(DateTime.Today.AddDays(-1));
-        var prodReportTask = OrderSvc.GetProductionReportAsync(6);
+        var ordersTask = CacheSvc.GetAllOrdersAsync();
+        var stageTask = CacheSvc.GetStageAveragesAsync();
+        var garmentTask = CacheSvc.GetGarmentTypeSummaryAsync();
+        var paymentTask = CacheSvc.GetOverduePaymentsAsync();
+        var throughputTask = CacheSvc.GetThroughputAsync(DateTime.Today.AddDays(-1));
+        var prodReportTask = CacheSvc.GetProductionReportAsync(6);
 
         await Task.WhenAll(ordersTask, stageTask, garmentTask, paymentTask, throughputTask, prodReportTask);
 

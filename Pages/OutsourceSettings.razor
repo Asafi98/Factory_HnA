@@ -1,5 +1,6 @@
 @page "/outsource-settings"
 @inject FactoryOrderService OrderSvc
+@inject FactoryCacheService CacheSvc
 @inject FactoryAuthService AuthSvc
 
 <div class="page-header">
@@ -65,6 +66,7 @@
             return;
         }
         await OrderSvc.AddOutsourceSettingAsync(trimmed);
+        CacheSvc.Invalidate();
         NewType = "";
         Settings = await OrderSvc.GetOutsourceSettingsAsync();
     }
@@ -72,6 +74,7 @@
     async Task Remove(string garmentType)
     {
         await OrderSvc.RemoveOutsourceSettingAsync(garmentType);
+        CacheSvc.Invalidate();
         Settings = await OrderSvc.GetOutsourceSettingsAsync();
     }
 

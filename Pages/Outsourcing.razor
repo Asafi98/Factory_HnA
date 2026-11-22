@@ -1,5 +1,6 @@
 @page "/outsourcing"
 @inject FactoryOrderService OrderSvc
+@inject FactoryCacheService CacheSvc
 @inject FactoryAuthService AuthSvc
 
 <div class="page-header">
@@ -183,7 +184,7 @@
 
     async Task LoadOrders()
     {
-        AllOrders = await OrderSvc.GetOutsourcedOrdersAsync();
+        AllOrders = await CacheSvc.GetOutsourcedOrdersAsync();
         GarmentTypes = AllOrders
             .SelectMany(o => o.Items)
             .Where(i => !string.IsNullOrEmpty(i.GarmentType))
@@ -195,6 +196,7 @@
     {
         await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, newStatus,
             AuthSvc.LoggedInUser ?? "factory");
+        CacheSvc.Invalidate();
         await LoadOrders();
     }
 
@@ -208,6 +210,7 @@
     {
         await OrderSvc.UpdateOutsourceVendorAsync(order.BranchKey, item.OrderItemId, VendorInput);
         EditingVendorItem = null;
+        CacheSvc.Invalidate();
         await LoadOrders();
     }
 

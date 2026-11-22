@@ -1,5 +1,6 @@
 @page "/"
 @inject FactoryOrderService OrderSvc
+@inject FactoryCacheService CacheSvc
 @inject FactoryMeasurementService MeasureSvc
 @inject FactoryLookupService LookupSvc
 @inject FactoryAuthService AuthSvc
@@ -243,7 +244,7 @@
     {
         Categories = await LookupSvc.GetCategoryNamesAsync();
         Outlets = await LookupSvc.GetOutletNamesAsync();
-        AllOrders = await OrderSvc.GetAllOrdersAsync();
+        AllOrders = await CacheSvc.GetAllOrdersAsync();
         ApplyFilter();
     }
 
@@ -379,6 +380,7 @@
         try
         {
             await OrderSvc.UpdateBookNoAsync(o.OrderId, o.BranchKey, BookNoInput);
+            CacheSvc.Invalidate();
             o.BookNo = string.IsNullOrWhiteSpace(BookNoInput) ? null : BookNoInput.Trim();
             Msg = $"Book No. updated for Order #{o.OrderId}."; IsErr = false;
         }
@@ -393,6 +395,7 @@
         try
         {
             await OrderSvc.UpdateStageAsync(o.BranchKey, o.OrderId, stage, AuthSvc.LoggedInUser);
+            CacheSvc.Invalidate();
             o.FactoryStage = stage;
             if (FactoryStages.ShopStatusSync.TryGetValue(stage, out var shopStatus))
                 o.OrderStatus = shopStatus;
