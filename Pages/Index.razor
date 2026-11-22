@@ -219,7 +219,7 @@
     FactoryOrder? SelOrder;
     List<FactoryStatusHistory> History = new();
     string Search = "", CategoryFilter = "", LocationFilter = "", StageFilter = "", BranchFilter = "", Msg = "";
-    bool IsErr;
+    bool IsErr, _busy;
     int? EditingBookNoOrderId;
     string? EditingBookNoBranch;
     string BookNoInput = "";
@@ -377,6 +377,8 @@
 
     async Task SaveBookNo(FactoryOrder o)
     {
+        if (_busy) return;
+        _busy = true;
         try
         {
             await OrderSvc.UpdateBookNoAsync(o.OrderId, o.BranchKey, BookNoInput);
@@ -388,10 +390,13 @@
         EditingBookNoOrderId = null;
         EditingBookNoBranch = null;
         BookNoInput = "";
+        _busy = false;
     }
 
     async Task UpdateStage(FactoryOrder o, string stage)
     {
+        if (_busy) return;
+        _busy = true;
         try
         {
             await OrderSvc.UpdateStageAsync(o.BranchKey, o.OrderId, stage, AuthSvc.LoggedInUser);
@@ -405,6 +410,7 @@
             ApplyFilter();
         }
         catch (Exception ex) { Msg = ex.Message; IsErr = true; }
+        finally { _busy = false; }
     }
 
     async Task PrintOrder()

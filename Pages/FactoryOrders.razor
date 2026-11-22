@@ -62,20 +62,20 @@
                         <td style="white-space:nowrap">
                             @if (item.ItemStatus == "Arrived at Factory")
                             {
-                                <button class="btn btn-primary btn-sm" @onclick='() => ChangeStatus(order, item, "In Progress")'>Start</button>
+                                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "In Progress")'>Start</button>
                             }
                             else if (item.ItemStatus == "In Progress")
                             {
-                                <button class="btn btn-warning btn-sm" @onclick='() => ChangeStatus(order, item, "Sent for Trial")'>Ready for Trial</button>
-                                <button class="btn btn-success btn-sm" @onclick='() => ChangeStatus(order, item, "Completed")'>Complete</button>
+                                <button class="btn btn-warning btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "Sent for Trial")'>Ready for Trial</button>
+                                <button class="btn btn-success btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "Completed")'>Complete</button>
                             }
                             else if (item.ItemStatus == "Sent Back")
                             {
-                                <button class="btn btn-primary btn-sm" @onclick='() => ChangeStatus(order, item, "In Progress")'>Rework</button>
+                                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "In Progress")'>Rework</button>
                             }
                             else if (item.ItemStatus == "Completed")
                             {
-                                <button class="btn btn-success btn-sm" @onclick='() => ChangeStatus(order, item, "Sent to Shop")'>Send to Shop</button>
+                                <button class="btn btn-success btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "Sent to Shop")'>Send to Shop</button>
                             }
                             <button class="btn btn-ghost btn-sm" @onclick="() => ViewRemarks(order, item)">Remarks</button>
                         </td>
@@ -124,7 +124,7 @@
                                 </div>
                                 <div style="display:flex;gap:6px;align-items:center">
                                     <span style="font-size:11px;color:var(--ink-faint)">Sent: @(item.SentToFactoryAt?.ToString("dd MMM, hh:mm tt") ?? "—")</span>
-                                    <button class="btn btn-primary btn-sm" @onclick="() => AcceptItem(order, item)">Accept</button>
+                                    <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick="() => AcceptItem(order, item)">Accept</button>
                                 </div>
                             </div>
                         }
@@ -184,6 +184,7 @@
     List<OrderItemRemark> ItemRemarks = new();
     List<string> GarmentTypes = new();
     string NewRemarkText = "";
+    bool _busy;
 
     IEnumerable<FactoryOrder> FilteredOrders => AllOrders
         .Where(o => string.IsNullOrEmpty(SearchText) ||
@@ -227,20 +228,32 @@
 
     async Task ChangeStatus(FactoryOrder order, FactoryOrderItem item, string newStatus)
     {
-        await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, newStatus,
-            AuthSvc.LoggedInUser ?? "factory");
-        CacheSvc.Invalidate();
-        await LoadOrders();
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, newStatus,
+                AuthSvc.LoggedInUser ?? "factory");
+            CacheSvc.Invalidate();
+            await LoadOrders();
+        }
+        finally { _busy = false; }
     }
 
     async Task AcceptItem(FactoryOrder order, FactoryOrderItem item)
     {
-        await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, "Arrived at Factory",
-            AuthSvc.LoggedInUser ?? "factory");
-        CacheSvc.Invalidate();
-        PendingAcceptance = await CacheSvc.GetSentToFactoryAsync();
-        if (!PendingAcceptance.Any()) ShowIncoming = false;
-        await LoadOrders();
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await OrderSvc.UpdateItemStatusAsync(order.BranchKey, item.OrderItemId, "Arrived at Factory",
+                AuthSvc.LoggedInUser ?? "factory");
+            CacheSvc.Invalidate();
+            PendingAcceptance = await CacheSvc.GetSentToFactoryAsync();
+            if (!PendingAcceptance.Any()) ShowIncoming = false;
+            await LoadOrders();
+        }
+        finally { _busy = false; }
     }
 
     async Task ViewRemarks(FactoryOrder order, FactoryOrderItem item)
