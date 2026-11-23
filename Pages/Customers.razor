@@ -2,6 +2,7 @@
 @inject FactoryCustomerService CustomerSvc
 @inject FactoryMeasurementService MeasureSvc
 @inject FactoryAuthService AuthSvc
+@inject IJSRuntime JS
 
 <div class="page-header">
     <h1>👥 Customers</h1>
@@ -11,7 +12,7 @@
 
 <div class="card" style="padding:12px;margin-bottom:14px">
     <input class="form-control" style="max-width:400px" placeholder="Search customer by name or phone..."
-           value="@Search" @oninput="OnSearch" />
+           @ref="_searchRef" />
 
     @if (Results.Any())
     {
@@ -211,6 +212,8 @@
     }
 }
 
+@implements IAsyncDisposable
+
 @code {
     // Canonical garment-type keys — must match the keys the POS app uses when
     // saving scans, so a scan uploaded on either side shows up here.
@@ -218,9 +221,12 @@
                  GShalwarKameez = "Shalwar Kameez", GCoat = "Coat / Sherwani", GSuit2Piece = "2-Piece Suit";
     static readonly string[] AllGarmentTypes = { GShirt, GPant, GWaistcoat, GShalwarKameez, GCoat, GSuit2Piece };
 
+    ElementReference _searchRef;
+    DotNetObjectReference<Customers>? _dotNetRef;
+    bool _jsInit;
+
     string Search = "", Msg = ""; bool IsErr, Searching;
     List<FactoryCustomer> Results = new();
-    readonly Debouncer _searchDebounce = new();
     FactoryCustomer? SelCustomer;
     int Tab;
     Dictionary<string, MeasurementScan?> Scans = new();
@@ -232,17 +238,27 @@
     CoatMeasurement? Coat;
     Suit2PieceMeasurement? Suit;
 
-    async Task OnSearch(ChangeEventArgs e)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        Search = e.Value?.ToString() ?? "";
-        Searching = true;
-        await _searchDebounce.DebounceAsync(async () =>
+        if (firstRender && !_jsInit)
         {
-            Results = Search.Length >= 2 ? await CustomerSvc.SearchAsync(Search) : new();
-            Searching = false;
-            await InvokeAsync(StateHasChanged);
-        });
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("blazorDebounce.init", _searchRef, _dotNetRef, "OnSearchDebounced", 300);
+            _jsInit = true;
+        }
     }
+
+    [JSInvokable]
+    public async Task OnSearchDebounced(string value)
+    {
+        Search = value;
+        Searching = true;
+        Results = Search.Length >= 2 ? await CustomerSvc.SearchAsync(Search) : new();
+        Searching = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public ValueTask DisposeAsync() { _dotNetRef?.Dispose(); return ValueTask.CompletedTask; }
 
     async Task SelectCustomer(FactoryCustomer c)
     {
