@@ -46,17 +46,18 @@
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Stage</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Location</th><th>Item</th><th>Qty</th><th>Trial</th><th>Delivery</th><th>Alerts</th><th class="no-print">Actions</th></tr>
+                <tr><th>Stage</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Location</th><th>Item</th><th>Qty</th><th>Ordered</th><th>Trial</th><th>Delivery</th><th>Alerts</th><th class="no-print">Actions</th></tr>
             </thead>
             <tbody>
                 @foreach (var ord in Filtered)
                 {
                     var o = ord;
-                    var rowItems = o.Items.Any() ? o.Items : new List<FactoryOrderItem> { new() { ProductName = "—" } };
+                    var rowItems = o.Items.Any() ? o.Items.Where(ItemMatchesStage).ToList() : new List<FactoryOrderItem> { new() { ProductName = "—", FactoryStage = o.FactoryStage } };
                     foreach (var item in rowItems)
                     {
                         <tr style="@(o.IsOverdue ? "background:rgba(255,60,60,0.08);" : o.IsStuck ? "background:rgba(255,160,40,0.08);" : "")">
-                            <td>@StageBadge(o.FactoryStage)</td>
+                            @{ var itm = item; }
+                            <td>@StageBadge(itm.FactoryStage)</td>
                             <td style="font-weight:600">#@o.OrderId</td>
                             <td style="font-weight:600;color:var(--gold)">
                                 @if (EditingBookNoOrderId == o.OrderId && EditingBookNoBranch == o.BranchKey)
@@ -78,8 +79,9 @@
                             <td style="font-size:12px;color:#888">@(o.CustomerPhone ?? "—")</td>
                             <td style="font-size:12px;color:#888">@o.BranchLabel@(o.IsDoorstep ? " 🏠" : "")</td>
                             <td>@(o.OutletName ?? "—")</td>
-                            <td style="font-size:12px">@item.ProductName@(!string.IsNullOrEmpty(item.ItemNotes) ? $" ({item.ItemNotes})" : "")</td>
-                            <td style="text-align:center;font-size:12px">@(item.Quantity > 0 ? item.Quantity.ToString() : "—")</td>
+                            <td style="font-size:12px">@itm.ProductName@(!string.IsNullOrEmpty(itm.ItemNotes) ? $" ({itm.ItemNotes})" : "")</td>
+                            <td style="text-align:center;font-size:12px">@(itm.Quantity > 0 ? itm.Quantity.ToString() : "—")</td>
+                            <td style="font-size:12px">@(o.CreatedAt != default ? ToPkt(o.CreatedAt).ToString("dd MMM") : "—")</td>
                             <td style="font-size:12px">@(o.TrialDate?.ToString("dd MMM") ?? "—")</td>
                             <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
                             <td style="white-space:nowrap;font-size:11px">
@@ -89,20 +91,23 @@
                                 @if (!o.IsOverdue && !o.IsStuck) { <span style="color:#555">—</span> }
                             </td>
                             <td class="no-print" style="white-space:nowrap">
-                                <button class="btn btn-ghost btn-sm" @onclick="() => OpenOrder(o)">View / Print</button>
-                                <select class="form-control" style="width:150px;padding:4px 6px;font-size:12px;display:inline-block;margin-left:4px"
-                                        @onchange="e => UpdateStage(o, e.Value?.ToString() ?? o.FactoryStage ?? FactoryStages.Received)">
-                                    <option value="" selected="@(string.IsNullOrEmpty(o.FactoryStage))">— Not Started —</option>
-                                    @foreach (var s in FactoryStages.All)
-                                    {
-                                        <option value="@s" selected="@(s == o.FactoryStage)">@s</option>
-                                    }
-                                </select>
+                                <button class="btn btn-ghost btn-sm" @onclick="() => OpenOrder(o)">View</button>
+                                @if (itm.OrderItemId > 0)
+                                {
+                                    <select class="form-control" style="width:140px;padding:4px 6px;font-size:11px;display:inline-block;margin-left:4px"
+                                            @onchange="e => UpdateItemStage(o, itm, e.Value?.ToString() ?? string.Empty)">
+                                        <option value="" selected="@(string.IsNullOrEmpty(itm.FactoryStage))">— Not Started —</option>
+                                        @foreach (var s in FactoryStages.All)
+                                        {
+                                            <option value="@s" selected="@(s == itm.FactoryStage)">@s</option>
+                                        }
+                                    </select>
+                                }
                             </td>
                         </tr>
                     }
                 }
-                @if (!Filtered.Any()) { <tr><td colspan="13" style="text-align:center;color:#555;padding:24px">No orders found.</td></tr> }
+                @if (!Filtered.Any()) { <tr><td colspan="14"style="text-align:center;color:#555;padding:24px">No orders found.</td></tr> }
             </tbody>
         </table>
     </div>
@@ -119,7 +124,8 @@
             </div>
             <div class="modal-body">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
-                    <div class="info-row"><span class="lbl">Factory Stage</span><span class="val">@StageBadge(SelOrder.FactoryStage)</span></div>
+                    <div class="info-row"><span class="lbl">Overall Stage</span><span class="val">@StageBadge(SelOrder.FactoryStage)</span></div>
+                    <div class="info-row"><span class="lbl">Ordered On</span><span class="val">@(SelOrder.CreatedAt != default ? ToPkt(SelOrder.CreatedAt).ToString("dd MMM yyyy") : "—")</span></div>
                     <div class="info-row"><span class="lbl">Book No.</span><span class="val" style="font-weight:600;color:var(--gold)">
                         @if (EditingBookNoOrderId == SelOrder.OrderId && EditingBookNoBranch == SelOrder.BranchKey)
                         {
@@ -145,12 +151,22 @@
                     }
                 </div>
 
-                <div class="section-divider">Items Ordered</div>
+                <div class="section-divider">Items &amp; Stages</div>
                 @foreach (var item in SelOrder.Items)
                 {
-                    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px">
-                        <span>@item.ProductName</span>
-                        <span style="color:#ffd12c">×@(item.Quantity)</span>
+                    var mi = item;
+                    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px">
+                        <span style="flex:1">@mi.ProductName@(!string.IsNullOrEmpty(mi.ItemNotes) ? $" ({mi.ItemNotes})" : "")</span>
+                        <span style="color:#ffd12c">×@(mi.Quantity)</span>
+                        @StageBadge(mi.FactoryStage)
+                        <select class="form-control no-print" style="width:170px;padding:4px 6px;font-size:12px"
+                                @onchange="e => UpdateItemStage(SelOrder, mi, e.Value?.ToString() ?? string.Empty)">
+                            <option value="" selected="@(string.IsNullOrEmpty(mi.FactoryStage))">— Not Started —</option>
+                            @foreach (var s in FactoryStages.All)
+                            {
+                                <option value="@s" selected="@(s == mi.FactoryStage)">@s</option>
+                            }
+                        </select>
                     </div>
                 }
                 @if (!SelOrder.Items.Any()) { <p style="color:#555;font-size:13px">No items recorded.</p> }
@@ -173,29 +189,33 @@
                     </div>
                 }
 
-                <div class="section-divider" style="margin-top:18px">Change Stage</div>
-                <select class="form-control" style="max-width:260px" @onchange="e => UpdateStage(SelOrder, e.Value?.ToString() ?? SelOrder.FactoryStage ?? FactoryStages.Received)">
-                    <option value="" selected="@(string.IsNullOrEmpty(SelOrder.FactoryStage))">— Not Started —</option>
-                    @foreach (var s in FactoryStages.All)
-                    {
-                        <option value="@s" selected="@(s == SelOrder.FactoryStage)">@s — @FactoryStages.Descriptions[s]</option>
-                    }
-                </select>
+                @if (SelOrder.Items.Count > 1)
+                {
+                    <div class="section-divider" style="margin-top:18px">Move All Items</div>
+                    <select @key="_bulkKey" class="form-control no-print" style="max-width:300px" @onchange="e => UpdateAllItemStages(SelOrder, e.Value?.ToString() ?? string.Empty)">
+                        <option value="__pick" selected>— Choose a stage for every item —</option>
+                        @foreach (var s in FactoryStages.All)
+                        {
+                            <option value="@s">@s — @FactoryStages.Descriptions[s]</option>
+                        }
+                    </select>
+                }
 
                 <div class="section-divider" style="margin-top:18px">Progress History</div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Stage</th><th>Date &amp; Time</th><th>Changed By</th></tr></thead>
+                        <thead><tr><th>Item</th><th>Stage</th><th>Date &amp; Time</th><th>Changed By</th></tr></thead>
                         <tbody>
                             @foreach (var h in History)
                             {
                                 <tr>
+                                    <td style="font-size:12px">@(h.ProductName ?? "—")</td>
                                     <td>@StageBadge(h.Stage)</td>
                                     <td style="font-size:12px">@ToPkt(h.ChangedAt).ToString("dd MMM yyyy, hh:mm tt")</td>
                                     <td style="font-size:12px;color:#888">@(h.ChangedBy ?? "—")</td>
                                 </tr>
                             }
-                            @if (!History.Any()) { <tr><td colspan="3" style="text-align:center;color:#555;padding:12px">No history recorded yet.</td></tr> }
+                            @if (!History.Any()) { <tr><td colspan="4" style="text-align:center;color:#555;padding:12px">No history recorded yet.</td></tr> }
                         </tbody>
                     </table>
                 </div>
@@ -221,6 +241,7 @@
     List<FactoryStatusHistory> History = new();
     string Search = "", CategoryFilter = "", LocationFilter = "", StageFilter = "", BranchFilter = "", Msg = "";
     bool IsErr, _busy;
+    int _bulkKey;
     int? EditingBookNoOrderId;
     string? EditingBookNoBranch;
     string BookNoInput = "";
@@ -274,8 +295,13 @@
 
     void SetStageFilter(string stage) { StageFilter = stage; ApplyFilter(); }
 
+    bool ItemMatchesStage(FactoryOrderItem i) =>
+        StageFilter == "" ||
+        (StageFilter == "__none" ? string.IsNullOrEmpty(i.FactoryStage) : i.FactoryStage == StageFilter);
+
     void ApplyFilter() => Filtered = AllOrders.Where(o =>
-        (StageFilter == "" || (StageFilter == "__none" ? string.IsNullOrEmpty(o.FactoryStage) : o.FactoryStage == StageFilter)) &&
+        (o.Items.Any() ? o.Items.Any(ItemMatchesStage)
+                       : StageFilter == "" || (StageFilter == "__none" ? string.IsNullOrEmpty(o.FactoryStage) : o.FactoryStage == StageFilter)) &&
         (string.IsNullOrEmpty(Search) || o.CustomerName.Contains(Search, StringComparison.OrdinalIgnoreCase)) &&
         (string.IsNullOrEmpty(BranchFilter) || string.Equals(o.BranchKey, BranchFilter, StringComparison.OrdinalIgnoreCase)) &&
         (string.IsNullOrEmpty(CategoryFilter) || o.Categories.Any(c => string.Equals(c, CategoryFilter, StringComparison.OrdinalIgnoreCase))) &&
@@ -316,7 +342,8 @@
     async Task OpenOrder(FactoryOrder o)
     {
         SelOrder = o;
-        History = await OrderSvc.GetStageHistoryAsync(o.BranchKey, o.OrderId);
+        _bulkKey++;
+        History = await OrderSvc.GetItemStageHistoryAsync(o.BranchKey, o.OrderId);
         AvailableMeasurements.Clear();
         SelectedMeasurements.Clear();
         Scans.Clear();
@@ -394,24 +421,56 @@
         _busy = false;
     }
 
-    async Task UpdateStage(FactoryOrder o, string stage)
+    async Task UpdateItemStage(FactoryOrder o, FactoryOrderItem item, string stage)
     {
-        if (_busy) return;
+        if (_busy || item.OrderItemId <= 0) return;
         _busy = true;
         try
         {
-            await OrderSvc.UpdateStageAsync(o.BranchKey, o.OrderId, stage, AuthSvc.LoggedInUser);
-            CacheSvc.Invalidate();
-            o.FactoryStage = stage;
-            if (FactoryStages.ShopStatusSync.TryGetValue(stage, out var shopStatus))
-                o.OrderStatus = shopStatus;
-            if (SelOrder?.OrderId == o.OrderId && SelOrder.BranchKey == o.BranchKey)
-                History = await OrderSvc.GetStageHistoryAsync(o.BranchKey, o.OrderId);
-            Msg = $"Order #{o.OrderId} → {stage}."; IsErr = false;
-            ApplyFilter();
+            await SaveItemStage(o, item, stage);
+            await AfterStageChange(o);
+            Msg = $"Order #{o.OrderId} · {item.ProductName} → {item.CurrentStageLabel}."; IsErr = false;
         }
         catch (Exception ex) { Msg = ex.Message; IsErr = true; }
         finally { _busy = false; }
+    }
+
+    async Task UpdateAllItemStages(FactoryOrder o, string stage)
+    {
+        if (_busy || !FactoryStages.All.Contains(stage)) return;
+        _busy = true;
+        try
+        {
+            foreach (var item in o.Items.Where(i => i.OrderItemId > 0 && i.FactoryStage != stage))
+                await SaveItemStage(o, item, stage);
+            await AfterStageChange(o);
+            Msg = $"Order #{o.OrderId} · all items → {stage}."; IsErr = false;
+        }
+        catch (Exception ex) { Msg = ex.Message; IsErr = true; }
+        finally { _busy = false; _bulkKey++; }
+    }
+
+    async Task SaveItemStage(FactoryOrder o, FactoryOrderItem item, string stage)
+    {
+        await OrderSvc.UpdateItemStageAsync(o.BranchKey, o.OrderId, item.OrderItemId, stage, AuthSvc.LoggedInUser);
+        item.FactoryStage = string.IsNullOrWhiteSpace(stage) ? null : stage;
+    }
+
+    // Mirrors the server-side recompute so the list updates without a full reload.
+    async Task AfterStageChange(FactoryOrder o)
+    {
+        CacheSvc.Invalidate();
+        var started = o.Items.Where(i => !string.IsNullOrEmpty(i.FactoryStage)).ToList();
+        o.FactoryStage = started.OrderBy(i => Array.IndexOf(FactoryStages.All, i.FactoryStage)).FirstOrDefault()?.FactoryStage;
+        o.LastStageChangeAt = DateTime.UtcNow;
+        if (o.Items.Count > 0 && started.Count == o.Items.Count && o.OrderStatus is not ("Delivered" or "Cancelled"))
+        {
+            var shopStatus = FactoryOrderService.ShopStatusFor(o.FactoryStage);
+            if (shopStatus != null) o.OrderStatus = shopStatus;
+        }
+        if (SelOrder?.OrderId == o.OrderId && SelOrder.BranchKey == o.BranchKey)
+            History = await OrderSvc.GetItemStageHistoryAsync(o.BranchKey, o.OrderId);
+        ApplyFilter();
     }
 
     async Task PrintOrder()

@@ -43,8 +43,11 @@ public class FactoryOrderService
             LEFT JOIN outlets ol ON o.outlet_id = ol.outlet_id
             LEFT JOIN invoices i ON o.invoice_id = i.invoice_id
             LEFT JOIN customer c ON o.customerid = c.customerid
-            LEFT JOIN (SELECT order_id, MAX(changed_at) AS last_change
-                       FROM factory_status_history GROUP BY order_id) lsc
+            LEFT JOIN (SELECT order_id, MAX(changed_at) AS last_change FROM (
+                           SELECT order_id, changed_at FROM factory_status_history
+                           UNION ALL
+                           SELECT order_id, changed_at FROM factory_item_status
+                       ) h GROUP BY order_id) lsc
                 ON o.order_id = lsc.order_id
             WHERE o.order_status <> 'Cancelled'
               AND (i.invoice_id IS NULL OR i.is_void = 0)
@@ -63,6 +66,7 @@ public class FactoryOrderService
                        oi.item_notes AS ItemNotes,
                        IFNULL(oi.item_status, 'Pending') AS ItemStatus,
                        oi.garment_type AS GarmentType,
+                       oi.factory_stage AS FactoryStage,
                        IFNULL(oi.is_outsourced, 0) AS IsOutsourced,
                        oi.outsource_vendor AS OutsourceVendor,
                        oi.sent_to_factory_at AS SentToFactoryAt,
@@ -195,6 +199,7 @@ public class FactoryOrderService
                        oi.item_notes AS ItemNotes,
                        IFNULL(oi.item_status, 'Pending') AS ItemStatus,
                        oi.garment_type AS GarmentType,
+                       oi.factory_stage AS FactoryStage,
                        IFNULL(oi.is_outsourced, 0) AS IsOutsourced,
                        oi.outsource_vendor AS OutsourceVendor,
                        oi.sent_to_factory_at AS SentToFactoryAt,
@@ -372,51 +377,117 @@ public class FactoryOrderService
             new { v = vendor, id = orderItemId });
     }
 
-    // ── Existing 10-stage methods (kept for backward compatibility) ──
+    // ── Item-level factory stage tracking ──
 
-    public async Task<List<FactoryStatusHistory>> GetStageHistoryAsync(string branchKey, int orderId)
+    public async Task UpdateItemStageAsync(string branchKey, int orderId, int orderItemId, string stage, string? changedBy)
     {
-        using var conn = _db.CreateForBranch(branchKey);
-        var r = await conn.QueryAsync<FactoryStatusHistory>(@"
-            SELECT history_id AS HistoryId, order_id AS OrderId, stage AS Stage,
-                   changed_at AS ChangedAt, changed_by AS ChangedBy
-            FROM factory_status_history
-            WHERE order_id=@id
-            ORDER BY changed_at ASC, history_id ASC", new { id = orderId });
-        return r.ToList();
-    }
+        var newStage = string.IsNullOrWhiteSpace(stage) ? null : stage;
+        var by = changedBy ?? string.Empty;
 
-    public async Task UpdateStageAsync(string branchKey, int orderId, string stage, string? changedBy)
-    {
         using var conn = _db.CreateForBranch(branchKey);
         await conn.OpenAsync();
         using var tx = await conn.BeginTransactionAsync();
         try
         {
+            var items = (await conn.QueryAsync<FactoryOrderItem>(@"
+                SELECT order_item_id AS OrderItemId, factory_stage AS FactoryStage FROM order_items
+                WHERE order_id=@id AND IFNULL(item_status,'') <> 'Cancelled'",
+                new { id = orderId }, tx)).ToList();
+
+            var before = items.Select(i => i.FactoryStage).ToList();
+            var after = items.Select(i => i.OrderItemId == orderItemId ? newStage : i.FactoryStage).ToList();
+
+            await conn.ExecuteAsync(
+                "UPDATE order_items SET factory_stage=@s WHERE order_item_id=@iid AND order_id=@oid",
+                new { s = newStage, iid = orderItemId, oid = orderId }, tx);
+
+            if (newStage != null)
+            {
+                await conn.ExecuteAsync(@"
+                    INSERT INTO factory_item_status(order_id, order_item_id, stage, changed_by)
+                    VALUES(@oid, @iid, @s, NULLIF(@by, ''))",
+                    new { oid = orderId, iid = orderItemId, s = newStage, by }, tx);
+            }
+
+            // Order-level stage shown in lists = least-progressed item that has started.
+            var prevOrderStage = EarliestStage(before, requireAll: false);
+            var orderStage = EarliestStage(after, requireAll: false);
+
             await conn.ExecuteAsync(
                 "UPDATE orders SET factory_stage=@s WHERE order_id=@id",
-                new { s = stage, id = orderId }, tx);
+                new { s = orderStage, id = orderId }, tx);
 
-            await conn.ExecuteAsync(@"
-                INSERT INTO factory_status_history(order_id, stage, changed_by)
-                VALUES(@id, @s, NULLIF(@by, ''))",
-                new { id = orderId, s = stage, by = changedBy ?? string.Empty }, tx);
-
-            if (FactoryStages.ShopStatusSync.TryGetValue(stage, out var shopStatus))
+            // Legacy order-level history feeds the stage-duration analytics, so only
+            // record genuine order-level transitions there.
+            if (orderStage != null && orderStage != prevOrderStage)
             {
-                await conn.ExecuteAsync(
-                    "UPDATE orders SET order_status=@s WHERE order_id=@id",
-                    new { s = shopStatus, id = orderId }, tx);
-
                 await conn.ExecuteAsync(@"
-                    INSERT INTO order_status_history(order_id, status, changed_by)
+                    INSERT INTO factory_status_history(order_id, stage, changed_by)
                     VALUES(@id, @s, NULLIF(@by, ''))",
-                    new { id = orderId, s = shopStatus, by = changedBy ?? string.Empty }, tx);
+                    new { id = orderId, s = orderStage, by }, tx);
+            }
+
+            // Shop status follows the slowest item; a Not Started item holds it back.
+            var prevSync = EarliestStage(before, requireAll: true);
+            var newSync = EarliestStage(after, requireAll: true);
+            if (newSync != null && newSync != prevSync)
+            {
+                var shopStatus = ShopStatusFor(newSync);
+                if (shopStatus != null && shopStatus != ShopStatusFor(prevSync))
+                {
+                    var changed = await conn.ExecuteAsync(
+                        "UPDATE orders SET order_status=@s WHERE order_id=@id AND IFNULL(order_status,'') NOT IN ('Delivered','Cancelled')",
+                        new { s = shopStatus, id = orderId }, tx);
+
+                    if (changed > 0)
+                    {
+                        await conn.ExecuteAsync(@"
+                            INSERT INTO order_status_history(order_id, status, changed_by)
+                            VALUES(@id, @s, NULLIF(@by, ''))",
+                            new { id = orderId, s = shopStatus, by }, tx);
+                    }
+                }
             }
 
             await tx.CommitAsync();
         }
         catch { await tx.RollbackAsync(); throw; }
+    }
+
+    public static string? EarliestStage(IReadOnlyCollection<string?> stages, bool requireAll)
+    {
+        if (stages.Count == 0) return null;
+        if (requireAll && stages.Any(string.IsNullOrEmpty)) return null;
+        return stages.Where(s => !string.IsNullOrEmpty(s))
+                     .OrderBy(s => Array.IndexOf(FactoryStages.All, s))
+                     .FirstOrDefault();
+    }
+
+    // Highest shop-sync stage the order has reached, e.g. "Press & Packing" → "Trial Done".
+    public static string? ShopStatusFor(string? stage)
+    {
+        if (stage == null) return null;
+        var idx = Array.IndexOf(FactoryStages.All, stage);
+        string? status = null;
+        for (var i = 0; i <= idx; i++)
+            if (FactoryStages.ShopStatusSync.TryGetValue(FactoryStages.All[i], out var s)) status = s;
+        return status;
+    }
+
+    public async Task<List<FactoryStatusHistory>> GetItemStageHistoryAsync(string branchKey, int orderId)
+    {
+        using var conn = _db.CreateForBranch(branchKey);
+        var r = await conn.QueryAsync<FactoryStatusHistory>(@"
+            SELECT fis.id AS HistoryId, fis.order_id AS OrderId,
+                   fis.order_item_id AS OrderItemId,
+                   fis.stage AS Stage, fis.changed_at AS ChangedAt,
+                   fis.changed_by AS ChangedBy,
+                   oi.product_name AS ProductName
+            FROM factory_item_status fis
+            LEFT JOIN order_items oi ON fis.order_item_id = oi.order_item_id
+            WHERE fis.order_id=@id
+            ORDER BY fis.changed_at ASC, fis.id ASC", new { id = orderId });
+        return r.ToList();
     }
 
     public async Task<List<StageAverage>> GetStageAveragesAsync()
@@ -604,6 +675,7 @@ public class FactoryOrderService
                        oi.item_notes AS ItemNotes,
                        IFNULL(oi.item_status, 'Pending') AS ItemStatus,
                        oi.garment_type AS GarmentType,
+                       oi.factory_stage AS FactoryStage,
                        IFNULL(oi.is_outsourced, 0) AS IsOutsourced,
                        oi.outsource_vendor AS OutsourceVendor,
                        oi.sent_to_factory_at AS SentToFactoryAt,

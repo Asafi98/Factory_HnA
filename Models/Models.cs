@@ -138,20 +138,25 @@ public class FactoryOrderItem
     public string? ItemNotes { get; set; }
     public string ItemStatus { get; set; } = "Pending";
     public string? GarmentType { get; set; }
+    public string? FactoryStage { get; set; }
     public bool IsOutsourced { get; set; }
     public string? OutsourceVendor { get; set; }
     public DateTime? SentToFactoryAt { get; set; }
     public DateTime? FactoryAcceptedAt { get; set; }
     public DateTime? SentToShopAt { get; set; }
+
+    public string CurrentStageLabel => string.IsNullOrEmpty(FactoryStage) ? "Not Started" : FactoryStage;
 }
 
 public class FactoryStatusHistory
 {
     public int HistoryId { get; set; }
     public int OrderId { get; set; }
+    public int? OrderItemId { get; set; }
     public string Stage { get; set; } = "";
     public DateTime ChangedAt { get; set; }
     public string? ChangedBy { get; set; }
+    public string? ProductName { get; set; }
 }
 
 public class FactoryUser
