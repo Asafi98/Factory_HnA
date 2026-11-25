@@ -211,31 +211,30 @@ h1,h2,h3,h4{font-family:var(--font-display);margin:0;font-weight:600;color:var(-
 .logout-btn:hover{background:rgba(255,255,255,.16);color:#fff}
 
 /* ── SIDEBAR TOGGLE ── */
+.pos-shell{position:relative}
 .sidebar-toggle{
-  position:absolute;top:16px;right:-14px;z-index:101;
+  position:absolute;top:18px;left:222px;z-index:101;
   width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.18);
   background:var(--green-deep);color:#D8E3D3;cursor:pointer;
   display:flex;align-items:center;justify-content:center;font-size:14px;
-  transition:all .2s;box-shadow:var(--shadow-1);
+  transition:left .2s,background .2s;box-shadow:var(--shadow-1);
 }
 .sidebar-toggle:hover{background:rgba(255,255,255,.12);color:#fff}
-.sidebar{position:relative}
+.sidebar-toggle::after{content:'◀';font-size:10px}
 
 /* Collapsed state */
 .pos-shell.sidebar-collapsed .sidebar{width:64px;min-width:64px}
+.pos-shell.sidebar-collapsed .sidebar-toggle{left:50px}
+.pos-shell.sidebar-collapsed .sidebar-toggle::after{content:'▶';font-size:10px}
 .pos-shell.sidebar-collapsed .brand-name,
-.pos-shell.sidebar-collapsed .nav-links li a span:last-child,
 .pos-shell.sidebar-collapsed .nav-section,
 .pos-shell.sidebar-collapsed .user-info{display:none}
-.pos-shell.sidebar-collapsed .nav-links li a{padding:10px;justify-content:center;border-radius:9px}
-.pos-shell.sidebar-collapsed .nav-links li a span{width:auto}
-.pos-shell.sidebar-collapsed .logout-btn span{display:none}
-.pos-shell.sidebar-collapsed .logout-btn{padding:9px;justify-content:center}
+.pos-shell.sidebar-collapsed .nav-links li a{padding:10px;justify-content:center;border-radius:9px;font-size:0}
+.pos-shell.sidebar-collapsed .nav-links li a span{width:auto;font-size:16px}
+.pos-shell.sidebar-collapsed .logout-btn{padding:9px;justify-content:center;font-size:0}
+.pos-shell.sidebar-collapsed .logout-btn::before{content:'⏻';font-size:13px}
 .pos-shell.sidebar-collapsed .logged-in-user{padding:8px 4px;justify-content:center}
 .pos-shell.sidebar-collapsed .sidebar-brand{justify-content:center;padding:16px 8px}
-.pos-shell.sidebar-collapsed .sidebar-toggle{right:-14px}
-.pos-shell.sidebar-collapsed .sidebar-toggle::after{content:'▶';font-size:10px}
-.sidebar-toggle::after{content:'◀';font-size:10px}
 
 /* ── MAIN CONTENT ── */
 .main-content{
@@ -586,7 +585,7 @@ textarea.form-control{resize:vertical;min-height:70px}
   th{background:#f0f0f0!important;color:black!important}
   .badge{border:1px solid #999;padding:2px 6px;border-radius:4px;font-size:10px}
   .pos-shell{display:block!important}
-  .sidebar{display:none!important}
+  .sidebar,.sidebar-toggle{display:none!important}
   .main-content{padding:0!important;overflow:visible!important}
   .modal-overlay{position:static!important;background:none!important;padding:0!important}
   .modal-box{box-shadow:none!important;border:none!important;max-height:none!important;border-radius:0!important}

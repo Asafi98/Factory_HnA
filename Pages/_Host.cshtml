@@ -22,13 +22,13 @@
             el.classList.toggle('sidebar-collapsed');
             try{localStorage.setItem('sb-collapsed',el.classList.contains('sidebar-collapsed')?'1':'0')}catch(e){}
         }
-        // Restore collapsed state before first paint
-        try{if(localStorage.getItem('sb-collapsed')==='1'){
-            document.addEventListener('DOMContentLoaded',function(){
-                var el=document.getElementById('posShell');
-                if(el)el.classList.add('sidebar-collapsed');
-            });
-        }}catch(e){}
+        // Restore collapsed state on load and after Blazor reconnect
+        function _applySidebarState(){
+            var el=document.getElementById('posShell');
+            if(!el)return;
+            try{if(localStorage.getItem('sb-collapsed')==='1')el.classList.add('sidebar-collapsed')}catch(e){}
+        }
+        document.addEventListener('DOMContentLoaded',_applySidebarState);
     </script>
 </head>
 <body>
