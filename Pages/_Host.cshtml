@@ -15,6 +15,21 @@
     <!-- print.js MUST load before Blazor so JS interop calls never find it undefined -->
     <script src="/js/print.js"></script>
     <script src="/js/debounce.js"></script>
+    <script>
+        function toggleSidebar(){
+            var el=document.getElementById('posShell');
+            if(!el)return;
+            el.classList.toggle('sidebar-collapsed');
+            try{localStorage.setItem('sb-collapsed',el.classList.contains('sidebar-collapsed')?'1':'0')}catch(e){}
+        }
+        // Restore collapsed state before first paint
+        try{if(localStorage.getItem('sb-collapsed')==='1'){
+            document.addEventListener('DOMContentLoaded',function(){
+                var el=document.getElementById('posShell');
+                if(el)el.classList.add('sidebar-collapsed');
+            });
+        }}catch(e){}
+    </script>
 </head>
 <body>
     <component type="typeof(App)" render-mode="Server" />

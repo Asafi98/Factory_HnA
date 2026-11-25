@@ -210,6 +210,33 @@ h1,h2,h3,h4{font-family:var(--font-display);margin:0;font-weight:600;color:var(-
 }
 .logout-btn:hover{background:rgba(255,255,255,.16);color:#fff}
 
+/* ── SIDEBAR TOGGLE ── */
+.sidebar-toggle{
+  position:absolute;top:16px;right:-14px;z-index:101;
+  width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.18);
+  background:var(--green-deep);color:#D8E3D3;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:14px;
+  transition:all .2s;box-shadow:var(--shadow-1);
+}
+.sidebar-toggle:hover{background:rgba(255,255,255,.12);color:#fff}
+.sidebar{position:relative}
+
+/* Collapsed state */
+.pos-shell.sidebar-collapsed .sidebar{width:64px;min-width:64px}
+.pos-shell.sidebar-collapsed .brand-name,
+.pos-shell.sidebar-collapsed .nav-links li a span:last-child,
+.pos-shell.sidebar-collapsed .nav-section,
+.pos-shell.sidebar-collapsed .user-info{display:none}
+.pos-shell.sidebar-collapsed .nav-links li a{padding:10px;justify-content:center;border-radius:9px}
+.pos-shell.sidebar-collapsed .nav-links li a span{width:auto}
+.pos-shell.sidebar-collapsed .logout-btn span{display:none}
+.pos-shell.sidebar-collapsed .logout-btn{padding:9px;justify-content:center}
+.pos-shell.sidebar-collapsed .logged-in-user{padding:8px 4px;justify-content:center}
+.pos-shell.sidebar-collapsed .sidebar-brand{justify-content:center;padding:16px 8px}
+.pos-shell.sidebar-collapsed .sidebar-toggle{right:-14px}
+.pos-shell.sidebar-collapsed .sidebar-toggle::after{content:'▶';font-size:10px}
+.sidebar-toggle::after{content:'◀';font-size:10px}
+
 /* ── MAIN CONTENT ── */
 .main-content{
   flex:1;overflow-y:auto;overflow-x:hidden;
@@ -485,6 +512,7 @@ textarea.form-control{resize:vertical;min-height:70px}
 /* Tablet 640-1023px */
 @media(max-width:1023px){
   :root{--sidebar-w:64px}
+  .sidebar-toggle{display:none}
   .brand-name,.nav-links li a span:last-child,.nav-section,
   .user-info,.sidebar-footer .user-name,.sidebar-footer .user-role{display:none}
   .nav-links li a{padding:10px;justify-content:center;border-radius:9px}

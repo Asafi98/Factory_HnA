@@ -5,12 +5,13 @@
 
 @if (AuthSvc.IsLoggedIn)
 {
-    <div class="pos-shell">
+    <div class="pos-shell" id="posShell">
         <nav class="sidebar">
             <div class="sidebar-brand">
                 <span class="brand-icon">F</span>
                 <span class="brand-name">Husna Aijaz Factory</span>
             </div>
+            <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar"></button>
             <ul class="nav-links">
                 @NavItem("/dashboard", "📊", "Dashboard")
                 @NavItem("/", "🏭", "Orders (Stages)")
