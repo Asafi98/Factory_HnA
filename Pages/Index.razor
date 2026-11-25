@@ -46,7 +46,7 @@
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Stage</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Location</th><th>Item</th><th>Qty</th><th>Ordered</th><th>Trial</th><th>Delivery</th><th>Alerts</th><th class="no-print">Actions</th></tr>
+                <tr><th>Stage</th><th>Ordered</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Location</th><th>Item</th><th>Qty</th><th>Trial</th><th>Delivery</th><th>Alerts</th><th class="no-print">Actions</th></tr>
             </thead>
             <tbody>
                 @foreach (var ord in Filtered)
@@ -57,7 +57,14 @@
                     {
                         <tr style="@(o.IsOverdue ? "background:rgba(255,60,60,0.08);" : o.IsStuck ? "background:rgba(255,160,40,0.08);" : "")">
                             @{ var itm = item; }
-                            <td>@StageBadge(itm.FactoryStage)</td>
+                            <td>
+                                @StageBadge(itm.FactoryStage)
+                                @if (itm.HasMixedUnits)
+                                {
+                                    <div style="font-size:10px;color:#888;margin-top:3px" title="@PieceSummary(itm)">pieces differ · View</div>
+                                }
+                            </td>
+                            <td style="font-size:12px;white-space:nowrap">@(o.CreatedAt != default ? ToPkt(o.CreatedAt).ToString("dd MMM yy") : "—")</td>
                             <td style="font-weight:600">#@o.OrderId</td>
                             <td style="font-weight:600;color:var(--gold)">
                                 @if (EditingBookNoOrderId == o.OrderId && EditingBookNoBranch == o.BranchKey)
@@ -81,7 +88,6 @@
                             <td>@(o.OutletName ?? "—")</td>
                             <td style="font-size:12px">@itm.ProductName@(!string.IsNullOrEmpty(itm.ItemNotes) ? $" ({itm.ItemNotes})" : "")</td>
                             <td style="text-align:center;font-size:12px">@(itm.Quantity > 0 ? itm.Quantity.ToString() : "—")</td>
-                            <td style="font-size:12px">@(o.CreatedAt != default ? ToPkt(o.CreatedAt).ToString("dd MMM") : "—")</td>
                             <td style="font-size:12px">@(o.TrialDate?.ToString("dd MMM") ?? "—")</td>
                             <td style="font-size:12px">@(o.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
                             <td style="white-space:nowrap;font-size:11px">
@@ -155,19 +161,48 @@
                 @foreach (var item in SelOrder.Items)
                 {
                     var mi = item;
-                    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px">
-                        <span style="flex:1">@mi.ProductName@(!string.IsNullOrEmpty(mi.ItemNotes) ? $" ({mi.ItemNotes})" : "")</span>
-                        <span style="color:#ffd12c">×@(mi.Quantity)</span>
-                        @StageBadge(mi.FactoryStage)
-                        <select class="form-control no-print" style="width:170px;padding:4px 6px;font-size:12px"
-                                @onchange="e => UpdateItemStage(SelOrder, mi, e.Value?.ToString() ?? string.Empty)">
-                            <option value="" selected="@(string.IsNullOrEmpty(mi.FactoryStage))">— Not Started —</option>
-                            @foreach (var s in FactoryStages.All)
-                            {
-                                <option value="@s" selected="@(s == mi.FactoryStage)">@s</option>
-                            }
-                        </select>
-                    </div>
+                    if (mi.UnitCount == 1)
+                    {
+                        <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px">
+                            <span style="flex:1">@mi.ProductName@(!string.IsNullOrEmpty(mi.ItemNotes) ? $" ({mi.ItemNotes})" : "")</span>
+                            <span style="color:#ffd12c">×@(mi.Quantity)</span>
+                            @StageBadge(mi.FactoryStage)
+                            <select class="form-control no-print" style="width:170px;padding:4px 6px;font-size:12px"
+                                    @onchange="e => UpdateItemStage(SelOrder, mi, e.Value?.ToString() ?? string.Empty)">
+                                <option value="" selected="@(string.IsNullOrEmpty(mi.FactoryStage))">— Not Started —</option>
+                                @foreach (var s in FactoryStages.All)
+                                {
+                                    <option value="@s" selected="@(s == mi.FactoryStage)">@s</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="padding:7px 0 2px;font-size:13px;display:flex;gap:10px;align-items:center">
+                            <span style="flex:1;font-weight:600">@mi.ProductName@(!string.IsNullOrEmpty(mi.ItemNotes) ? $" ({mi.ItemNotes})" : "")</span>
+                            <span style="color:#ffd12c">×@(mi.UnitCount)</span>
+                            <span style="font-size:11px;color:#888">overall</span>
+                            @StageBadge(mi.FactoryStage)
+                        </div>
+                        @for (var n = 1; n <= mi.UnitCount; n++)
+                        {
+                            var unitNo = n;
+                            var us = mi.StageOfUnit(unitNo);
+                            <div style="display:flex;align-items:center;gap:10px;padding:5px 0 5px 18px;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px">
+                                <span style="flex:1">@mi.ProductName @unitNo of @mi.UnitCount</span>
+                                @StageBadge(us)
+                                <select class="form-control no-print" style="width:170px;padding:4px 6px;font-size:12px"
+                                        @onchange="e => UpdateUnitStage(SelOrder, mi, unitNo, e.Value?.ToString() ?? string.Empty)">
+                                    <option value="" selected="@(string.IsNullOrEmpty(us))">— Not Started —</option>
+                                    @foreach (var s in FactoryStages.All)
+                                    {
+                                        <option value="@s" selected="@(s == us)">@s</option>
+                                    }
+                                </select>
+                            </div>
+                        }
+                    }
                 }
                 @if (!SelOrder.Items.Any()) { <p style="color:#555;font-size:13px">No items recorded.</p> }
 
@@ -209,7 +244,7 @@
                             @foreach (var h in History)
                             {
                                 <tr>
-                                    <td style="font-size:12px">@(h.ProductName ?? "—")</td>
+                                    <td style="font-size:12px">@(h.ProductName ?? "—")@(h.UnitNo.HasValue ? $" #{h.UnitNo}" : "")</td>
                                     <td>@StageBadge(h.Stage)</td>
                                     <td style="font-size:12px">@ToPkt(h.ChangedAt).ToString("dd MMM yyyy, hh:mm tt")</td>
                                     <td style="font-size:12px;color:#888">@(h.ChangedBy ?? "—")</td>
@@ -441,7 +476,7 @@
         _busy = true;
         try
         {
-            foreach (var item in o.Items.Where(i => i.OrderItemId > 0 && i.FactoryStage != stage))
+            foreach (var item in o.Items.Where(i => i.OrderItemId > 0 && (i.FactoryStage != stage || i.HasMixedUnits)))
                 await SaveItemStage(o, item, stage);
             await AfterStageChange(o);
             Msg = $"Order #{o.OrderId} · all items → {stage}."; IsErr = false;
@@ -454,7 +489,29 @@
     {
         await OrderSvc.UpdateItemStageAsync(o.BranchKey, o.OrderId, item.OrderItemId, stage, AuthSvc.LoggedInUser);
         item.FactoryStage = string.IsNullOrWhiteSpace(stage) ? null : stage;
+        item.UnitStages = new();
     }
+
+    async Task UpdateUnitStage(FactoryOrder o, FactoryOrderItem item, int unitNo, string stage)
+    {
+        if (_busy || item.OrderItemId <= 0) return;
+        _busy = true;
+        try
+        {
+            await OrderSvc.UpdateUnitStageAsync(o.BranchKey, o.OrderId, item.OrderItemId, unitNo, stage, AuthSvc.LoggedInUser);
+            var newStage = string.IsNullOrWhiteSpace(stage) ? null : stage;
+            item.UnitStages = Enumerable.Range(1, item.UnitCount)
+                .ToDictionary(n => n, n => n == unitNo ? newStage : item.StageOfUnit(n));
+            item.FactoryStage = FactoryOrderService.EarliestStage(item.UnitStages.Values.ToList(), requireAll: true);
+            await AfterStageChange(o);
+            Msg = $"Order #{o.OrderId} · {item.ProductName} {unitNo} of {item.UnitCount} → {(newStage ?? "Not Started")}."; IsErr = false;
+        }
+        catch (Exception ex) { Msg = ex.Message; IsErr = true; }
+        finally { _busy = false; }
+    }
+
+    static string PieceSummary(FactoryOrderItem i) => string.Join(", ",
+        Enumerable.Range(1, i.UnitCount).Select(n => $"#{n}: {i.StageOfUnit(n) ?? "Not Started"}"));
 
     // Mirrors the server-side recompute so the list updates without a full reload.
     async Task AfterStageChange(FactoryOrder o)

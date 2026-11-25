@@ -77,6 +77,18 @@ public class FactoryOrderService
                 WHERE oi.order_id IN @ids
                   AND oi.item_status <> 'Cancelled'", new { ids })).ToList();
 
+            if (items.Any())
+            {
+                var itemIds = items.Select(i => i.OrderItemId).ToList();
+                var units = await conn.QueryAsync<FactoryUnitStage>(@"
+                    SELECT order_item_id AS OrderItemId, unit_no AS UnitNo, stage AS Stage
+                    FROM factory_unit_stage WHERE order_item_id IN @itemIds", new { itemIds });
+                var unitMap = units.GroupBy(u => u.OrderItemId)
+                                   .ToDictionary(g => g.Key, g => g.ToDictionary(u => u.UnitNo, u => u.Stage));
+                foreach (var i in items)
+                    if (unitMap.TryGetValue(i.OrderItemId, out var us)) i.UnitStages = us;
+            }
+
             var itemsMap = items.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
             foreach (var o in orders)
             {
@@ -379,6 +391,7 @@ public class FactoryOrderService
 
     // ── Item-level factory stage tracking ──
 
+    // Sets every piece of an item line (e.g. both shirts of "Shirt × 2") to the same stage.
     public async Task UpdateItemStageAsync(string branchKey, int orderId, int orderItemId, string stage, string? changedBy)
     {
         var newStage = string.IsNullOrWhiteSpace(stage) ? null : stage;
@@ -389,17 +402,9 @@ public class FactoryOrderService
         using var tx = await conn.BeginTransactionAsync();
         try
         {
-            var items = (await conn.QueryAsync<FactoryOrderItem>(@"
-                SELECT order_item_id AS OrderItemId, factory_stage AS FactoryStage FROM order_items
-                WHERE order_id=@id AND IFNULL(item_status,'') <> 'Cancelled'",
-                new { id = orderId }, tx)).ToList();
-
-            var before = items.Select(i => i.FactoryStage).ToList();
-            var after = items.Select(i => i.OrderItemId == orderItemId ? newStage : i.FactoryStage).ToList();
-
             await conn.ExecuteAsync(
-                "UPDATE order_items SET factory_stage=@s WHERE order_item_id=@iid AND order_id=@oid",
-                new { s = newStage, iid = orderItemId, oid = orderId }, tx);
+                "DELETE FROM factory_unit_stage WHERE order_item_id=@iid",
+                new { iid = orderItemId }, tx);
 
             if (newStage != null)
             {
@@ -409,49 +414,113 @@ public class FactoryOrderService
                     new { oid = orderId, iid = orderItemId, s = newStage, by }, tx);
             }
 
-            // Order-level stage shown in lists = least-progressed item that has started.
-            var prevOrderStage = EarliestStage(before, requireAll: false);
-            var orderStage = EarliestStage(after, requireAll: false);
-
-            await conn.ExecuteAsync(
-                "UPDATE orders SET factory_stage=@s WHERE order_id=@id",
-                new { s = orderStage, id = orderId }, tx);
-
-            // Legacy order-level history feeds the stage-duration analytics, so only
-            // record genuine order-level transitions there.
-            if (orderStage != null && orderStage != prevOrderStage)
-            {
-                await conn.ExecuteAsync(@"
-                    INSERT INTO factory_status_history(order_id, stage, changed_by)
-                    VALUES(@id, @s, NULLIF(@by, ''))",
-                    new { id = orderId, s = orderStage, by }, tx);
-            }
-
-            // Shop status follows the slowest item; a Not Started item holds it back.
-            var prevSync = EarliestStage(before, requireAll: true);
-            var newSync = EarliestStage(after, requireAll: true);
-            if (newSync != null && newSync != prevSync)
-            {
-                var shopStatus = ShopStatusFor(newSync);
-                if (shopStatus != null && shopStatus != ShopStatusFor(prevSync))
-                {
-                    var changed = await conn.ExecuteAsync(
-                        "UPDATE orders SET order_status=@s WHERE order_id=@id AND IFNULL(order_status,'') NOT IN ('Delivered','Cancelled')",
-                        new { s = shopStatus, id = orderId }, tx);
-
-                    if (changed > 0)
-                    {
-                        await conn.ExecuteAsync(@"
-                            INSERT INTO order_status_history(order_id, status, changed_by)
-                            VALUES(@id, @s, NULLIF(@by, ''))",
-                            new { id = orderId, s = shopStatus, by }, tx);
-                    }
-                }
-            }
-
+            await ApplyItemStageAsync(conn, tx, orderId, orderItemId, newStage, by);
             await tx.CommitAsync();
         }
         catch { await tx.RollbackAsync(); throw; }
+    }
+
+    // Moves one piece of a multi-quantity line (e.g. shirt 2 of 2) on its own. The line's
+    // stage becomes its least-progressed piece, with Not Started counting as least.
+    public async Task UpdateUnitStageAsync(string branchKey, int orderId, int orderItemId, int unitNo, string stage, string? changedBy)
+    {
+        var newStage = string.IsNullOrWhiteSpace(stage) ? null : stage;
+        var by = changedBy ?? string.Empty;
+
+        using var conn = _db.CreateForBranch(branchKey);
+        await conn.OpenAsync();
+        using var tx = await conn.BeginTransactionAsync();
+        try
+        {
+            var item = await conn.QuerySingleAsync<FactoryOrderItem>(@"
+                SELECT order_item_id AS OrderItemId, factory_stage AS FactoryStage,
+                       quantity AS Quantity, IFNULL(cancelled_qty, 0) AS CancelledQty
+                FROM order_items WHERE order_item_id=@iid AND order_id=@oid",
+                new { iid = orderItemId, oid = orderId }, tx);
+
+            if (unitNo < 1 || unitNo > item.UnitCount)
+                throw new InvalidOperationException("That piece is no longer on this order. Refresh the page and try again.");
+
+            var saved = (await conn.QueryAsync<FactoryUnitStage>(@"
+                SELECT order_item_id AS OrderItemId, unit_no AS UnitNo, stage AS Stage
+                FROM factory_unit_stage WHERE order_item_id=@iid",
+                new { iid = orderItemId }, tx)).ToDictionary(u => u.UnitNo, u => u.Stage);
+
+            var units = Enumerable.Range(1, item.UnitCount)
+                .Select(n => n == unitNo ? newStage : saved.TryGetValue(n, out var s) ? s : item.FactoryStage)
+                .ToList();
+
+            await conn.ExecuteAsync(@"
+                INSERT INTO factory_unit_stage(order_item_id, unit_no, stage) VALUES(@iid, @n, @s)
+                ON DUPLICATE KEY UPDATE stage=VALUES(stage)",
+                units.Select((s, i) => new { iid = orderItemId, n = i + 1, s }), tx);
+
+            if (newStage != null)
+            {
+                await conn.ExecuteAsync(@"
+                    INSERT INTO factory_item_status(order_id, order_item_id, unit_no, stage, changed_by)
+                    VALUES(@oid, @iid, @n, @s, NULLIF(@by, ''))",
+                    new { oid = orderId, iid = orderItemId, n = unitNo, s = newStage, by }, tx);
+            }
+
+            await ApplyItemStageAsync(conn, tx, orderId, orderItemId, EarliestStage(units, requireAll: true), by);
+            await tx.CommitAsync();
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    // Saves an item line's stage, then recomputes the order stage and shop status from all lines.
+    async Task ApplyItemStageAsync(MySqlConnection conn, MySqlTransaction tx, int orderId, int orderItemId, string? newStage, string by)
+    {
+        var items = (await conn.QueryAsync<FactoryOrderItem>(@"
+            SELECT order_item_id AS OrderItemId, factory_stage AS FactoryStage FROM order_items
+            WHERE order_id=@id AND IFNULL(item_status,'') <> 'Cancelled'",
+            new { id = orderId }, tx)).ToList();
+
+        var before = items.Select(i => i.FactoryStage).ToList();
+        var after = items.Select(i => i.OrderItemId == orderItemId ? newStage : i.FactoryStage).ToList();
+
+        await conn.ExecuteAsync(
+            "UPDATE order_items SET factory_stage=@s WHERE order_item_id=@iid AND order_id=@oid",
+            new { s = newStage, iid = orderItemId, oid = orderId }, tx);
+
+        // Order-level stage shown in lists = least-progressed item that has started.
+        var prevOrderStage = EarliestStage(before, requireAll: false);
+        var orderStage = EarliestStage(after, requireAll: false);
+
+        await conn.ExecuteAsync(
+            "UPDATE orders SET factory_stage=@s WHERE order_id=@id",
+            new { s = orderStage, id = orderId }, tx);
+
+        // Legacy order-level history feeds the stage-duration analytics, so only
+        // record genuine order-level transitions there.
+        if (orderStage != null && orderStage != prevOrderStage)
+        {
+            await conn.ExecuteAsync(@"
+                INSERT INTO factory_status_history(order_id, stage, changed_by)
+                VALUES(@id, @s, NULLIF(@by, ''))",
+                new { id = orderId, s = orderStage, by }, tx);
+        }
+
+        // Shop status follows the slowest item; a Not Started item holds it back.
+        var prevSync = EarliestStage(before, requireAll: true);
+        var newSync = EarliestStage(after, requireAll: true);
+        if (newSync == null || newSync == prevSync) return;
+
+        var shopStatus = ShopStatusFor(newSync);
+        if (shopStatus == null || shopStatus == ShopStatusFor(prevSync)) return;
+
+        var changed = await conn.ExecuteAsync(
+            "UPDATE orders SET order_status=@s WHERE order_id=@id AND IFNULL(order_status,'') NOT IN ('Delivered','Cancelled')",
+            new { s = shopStatus, id = orderId }, tx);
+
+        if (changed > 0)
+        {
+            await conn.ExecuteAsync(@"
+                INSERT INTO order_status_history(order_id, status, changed_by)
+                VALUES(@id, @s, NULLIF(@by, ''))",
+                new { id = orderId, s = shopStatus, by }, tx);
+        }
     }
 
     public static string? EarliestStage(IReadOnlyCollection<string?> stages, bool requireAll)
@@ -479,7 +548,7 @@ public class FactoryOrderService
         using var conn = _db.CreateForBranch(branchKey);
         var r = await conn.QueryAsync<FactoryStatusHistory>(@"
             SELECT fis.id AS HistoryId, fis.order_id AS OrderId,
-                   fis.order_item_id AS OrderItemId,
+                   fis.order_item_id AS OrderItemId, fis.unit_no AS UnitNo,
                    fis.stage AS Stage, fis.changed_at AS ChangedAt,
                    fis.changed_by AS ChangedBy,
                    oi.product_name AS ProductName

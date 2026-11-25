@@ -146,6 +146,20 @@ public class FactoryOrderItem
     public DateTime? SentToShopAt { get; set; }
 
     public string CurrentStageLabel => string.IsNullOrEmpty(FactoryStage) ? "Not Started" : FactoryStage;
+
+    // Per-piece stages for a line like "Shirt × 2". Empty means every piece is at FactoryStage.
+    public Dictionary<int, string?> UnitStages { get; set; } = new();
+    public int UnitCount => Math.Max(1, ActiveQty);
+    public string? StageOfUnit(int unitNo) => UnitStages.TryGetValue(unitNo, out var s) ? s : FactoryStage;
+    public bool HasMixedUnits => UnitCount > 1 &&
+        Enumerable.Range(1, UnitCount).Select(StageOfUnit).Distinct().Count() > 1;
+}
+
+public class FactoryUnitStage
+{
+    public int OrderItemId { get; set; }
+    public int UnitNo { get; set; }
+    public string? Stage { get; set; }
 }
 
 public class FactoryStatusHistory
@@ -153,6 +167,7 @@ public class FactoryStatusHistory
     public int HistoryId { get; set; }
     public int OrderId { get; set; }
     public int? OrderItemId { get; set; }
+    public int? UnitNo { get; set; }
     public string Stage { get; set; } = "";
     public DateTime ChangedAt { get; set; }
     public string? ChangedBy { get; set; }
