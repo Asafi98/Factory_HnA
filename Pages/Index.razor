@@ -46,7 +46,7 @@
     <div class="table-wrap">
         <table>
             <thead>
-                <tr><th>Stage</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Branch</th><th>Location</th><th>Item</th><th>Qty</th><th>Trial</th><th>Delivery</th><th>Alerts</th><th class="no-print">Actions</th></tr>
+                <tr><th>Stage</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Location</th><th>Item</th><th>Qty</th><th>Trial</th><th>Delivery</th><th>Alerts</th><th class="no-print">Actions</th></tr>
             </thead>
             <tbody>
                 @foreach (var ord in Filtered)
@@ -75,6 +75,7 @@
                                 }
                             </td>
                             <td style="font-weight:500">@o.CustomerName</td>
+                            <td style="font-size:12px;color:#888">@(o.CustomerPhone ?? "—")</td>
                             <td style="font-size:12px;color:#888">@o.BranchLabel@(o.IsDoorstep ? " 🏠" : "")</td>
                             <td>@(o.OutletName ?? "—")</td>
                             <td style="font-size:12px">@item.ProductName@(!string.IsNullOrEmpty(item.ItemNotes) ? $" ({item.ItemNotes})" : "")</td>
