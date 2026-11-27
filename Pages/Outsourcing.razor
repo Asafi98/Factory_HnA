@@ -7,6 +7,7 @@
     <h1>Outsourced Items</h1>
     <p>Track outsourced garments &mdash; give fabric, collect for trial, deliver</p>
 </div>
+@if (!string.IsNullOrEmpty(Msg)) { <div class="alert @(IsErr ? "alert-error" : "alert-success")">@Msg</div> }
 
 <div class="tab-bar">
     <button class="tab-btn @(Filter==""?"active":"")" @onclick='()=>Filter=""'>All</button>
@@ -44,17 +45,26 @@
                         <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@(item.ActiveQty)</span>@if(item.CancelledQty > 0){<span style="color:var(--rust);font-size:10px;margin-left:3px">(@item.CancelledQty cancelled)</span>}</td>
                         <td><span class="badge badge-info">@(item.GarmentType ?? "—")</span></td>
                         <td>@order.CustomerName</td>
-                        <td>
-                            @if (EditingVendorItem == item.OrderItemId)
+                        <td style="white-space:nowrap">
+                            @if (IsEditingVendor(order, item))
                             {
-                                <div style="display:flex;gap:4px">
-                                    <input class="form-control" style="width:100px;padding:2px 6px;font-size:12px" @bind="VendorInput" />
-                                    <button class="btn btn-primary btn-sm" style="padding:2px 8px" @onclick="() => SaveVendor(order, item)">OK</button>
+                                <div style="display:flex;gap:4px;align-items:center">
+                                    <input @ref="_vendorInput" id="vendor-@(order.BranchKey)-@(item.OrderItemId)" class="form-control"
+                                           style="width:150px;padding:3px 6px;font-size:12px" list="vendorNames" maxlength="50"
+                                           placeholder="Vendor name" @bind="VendorInput" @bind:event="oninput"
+                                           @onkeydown="e => VendorKey(e, order, item)" />
+                                    <button class="btn btn-primary btn-sm" style="padding:3px 10px" disabled="@_busy" @onclick="() => SaveVendor(order, item)">Save</button>
+                                    <button class="btn btn-ghost btn-sm" style="padding:3px 8px" title="Cancel" @onclick="CancelVendor">✕</button>
                                 </div>
                             }
                             else
                             {
-                                <span style="cursor:pointer;text-decoration:underline dotted;color:var(--ink-muted)" @onclick="() => StartEditVendor(item)">@(item.OutsourceVendor ?? "Set vendor")</span>
+                                var hasVendor = !string.IsNullOrWhiteSpace(item.OutsourceVendor);
+                                <button type="button" title="@(hasVendor ? "Change vendor" : "Set vendor")"
+                                        style="background:none;border:0;padding:2px 0;font:inherit;cursor:pointer;text-align:left;color:@(hasVendor ? "var(--ink)" : "var(--ink-muted)");text-decoration:underline dotted"
+                                        @onclick="() => StartEditVendor(order, item)">
+                                    @(hasVendor ? item.OutsourceVendor : "+ Set vendor") <span style="font-size:11px;opacity:.7">✎</span>
+                                </button>
                             }
                         </td>
                         <td style="font-size:11px">@order.CreatedAt.ToString("dd MMM")</td>
@@ -94,6 +104,9 @@
             }
         </tbody>
     </table></div>
+    <datalist id="vendorNames">
+        @foreach (var v in KnownVendors) { <option value="@v"></option> }
+    </datalist>
 </div>
 
 @if (SelectedItem != null)
@@ -141,9 +154,14 @@
     FactoryOrder? SelectedOrder;
     List<OrderItemRemark> ItemRemarks = new();
     List<string> GarmentTypes = new();
-    int? EditingVendorItem;
+    (string Branch, int ItemId)? EditingVendor;
     string VendorInput = "";
+    List<string> KnownVendors = new();
+    ElementReference _vendorInput;
+    bool _focusVendor;
     string NewRemarkText = "";
+    string Msg = "";
+    bool IsErr;
     bool _busy;
 
     IEnumerable<FactoryOrder> FilteredOrders => AllOrders
@@ -191,6 +209,19 @@
             .Where(i => !string.IsNullOrEmpty(i.GarmentType))
             .Select(i => i.GarmentType!)
             .Distinct().OrderBy(x => x).ToList();
+        KnownVendors = AllOrders
+            .SelectMany(o => o.Items)
+            .Where(i => !string.IsNullOrWhiteSpace(i.OutsourceVendor))
+            .Select(i => i.OutsourceVendor!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusVendor) return;
+        _focusVendor = false;
+        try { await _vendorInput.FocusAsync(); } catch (InvalidOperationException) { }
     }
 
     async Task ChangeStatus(FactoryOrder order, FactoryOrderItem item, string newStatus)
@@ -203,14 +234,33 @@
                 AuthSvc.LoggedInUser ?? "factory");
             CacheSvc.Invalidate();
             await LoadOrders();
+            Msg = ""; IsErr = false;
         }
+        catch (Exception ex) { Msg = $"Could not update the status: {ex.Message}"; IsErr = true; }
         finally { _busy = false; }
     }
 
-    void StartEditVendor(FactoryOrderItem item)
+    // Item ids are only unique within a branch, so the branch is part of the key.
+    bool IsEditingVendor(FactoryOrder order, FactoryOrderItem item) =>
+        EditingVendor is { } e && e.Branch == order.BranchKey && e.ItemId == item.OrderItemId;
+
+    void StartEditVendor(FactoryOrder order, FactoryOrderItem item)
     {
-        EditingVendorItem = item.OrderItemId;
-        VendorInput = item.OutsourceVendor ?? "";
+        EditingVendor = (order.BranchKey, item.OrderItemId);
+        VendorInput = item.OutsourceVendor?.Trim() ?? "";
+        _focusVendor = true;
+    }
+
+    void CancelVendor()
+    {
+        EditingVendor = null;
+        VendorInput = "";
+    }
+
+    async Task VendorKey(KeyboardEventArgs e, FactoryOrder order, FactoryOrderItem item)
+    {
+        if (e.Key == "Enter") await SaveVendor(order, item);
+        else if (e.Key == "Escape") CancelVendor();
     }
 
     async Task SaveVendor(FactoryOrder order, FactoryOrderItem item)
@@ -219,11 +269,19 @@
         _busy = true;
         try
         {
-            await OrderSvc.UpdateOutsourceVendorAsync(order.BranchKey, item.OrderItemId, VendorInput);
-            EditingVendorItem = null;
+            var vendor = VendorInput.Trim();
+            if (vendor.Length > 50) { Msg = "Vendor names can be at most 50 characters."; IsErr = true; return; }
+            await OrderSvc.UpdateOutsourceVendorAsync(order.BranchKey, item.OrderItemId, vendor);
+            item.OutsourceVendor = vendor.Length == 0 ? null : vendor;
+            EditingVendor = null;
             CacheSvc.Invalidate();
             await LoadOrders();
+            Msg = vendor.Length == 0
+                ? $"Vendor cleared for order #{order.OrderId} · {item.ProductName}."
+                : $"Order #{order.OrderId} · {item.ProductName} → vendor {vendor}.";
+            IsErr = false;
         }
+        catch (Exception ex) { Msg = $"Could not save the vendor: {ex.Message}"; IsErr = true; }
         finally { _busy = false; }
     }
 

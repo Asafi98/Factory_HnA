@@ -465,8 +465,8 @@ public class FactoryOrderService
     {
         using var conn = _db.CreateForBranch(branchKey);
         await conn.ExecuteAsync(
-            "UPDATE order_items SET outsource_vendor=@v WHERE order_item_id=@id",
-            new { v = vendor, id = orderItemId });
+            "UPDATE order_items SET outsource_vendor=NULLIF(@v, '') WHERE order_item_id=@id",
+            new { v = (vendor ?? string.Empty).Trim(), id = orderItemId });
     }
 
     // ── Item-level factory stage tracking ──
