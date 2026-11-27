@@ -72,28 +72,8 @@
                         <td style="font-size:11px">@(order.DeliveryDate?.ToString("dd MMM") ?? "—")</td>
                         <td><span class="badge @StatusBadge(item.ItemStatus)">@StatusLabel(item.ItemStatus)</span></td>
                         <td style="white-space:nowrap">
-                            @if (item.ItemStatus == "Pending")
-                            {
-                                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "Sent to Factory")'>Give Fabric</button>
-                            }
-                            else if (item.ItemStatus == "Sent to Factory")
-                            {
-                                <button class="btn btn-primary btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "In Progress")'>Mark In Progress</button>
-                            }
-                            else if (item.ItemStatus == "In Progress")
-                            {
-                                <button class="btn btn-warning btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "Sent for Trial")'>Collect for Trial</button>
-                                <button class="btn btn-success btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "Completed")'>Complete</button>
-                            }
-                            else if (item.ItemStatus == "Sent for Trial")
-                            {
-                                <button class="btn btn-success btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "Completed")'>Complete</button>
-                            }
-                            else if (item.ItemStatus == "Completed")
-                            {
-                                <button class="btn btn-success btn-sm" disabled="@_busy" @onclick='() => ChangeStatus(order, item, "Sent to Shop")'>Send to Shop</button>
-                            }
-                            <button class="btn btn-ghost btn-sm" @onclick="() => ViewRemarks(order, item)">Remarks</button>
+                            @StatusSelect(order, item, "width:150px;padding:4px 6px;font-size:12px;display:inline-block")
+                            <button class="btn btn-ghost btn-sm" style="margin-left:4px" @onclick="() => OpenItem(order, item)">View</button>
                         </td>
                     </tr>
                 }
@@ -109,15 +89,56 @@
     </datalist>
 </div>
 
-@if (SelectedItem != null)
+@if (SelectedItem != null && SelectedOrder != null)
 {
-    <div class="modal-overlay" @onclick="() => SelectedItem = null">
-        <div class="modal-box md" @onclick:stopPropagation>
+    var so = SelectedOrder;
+    var si = SelectedItem;
+    <div class="modal-overlay" @onclick="CloseItem">
+        <div class="modal-box" style="max-width:680px" @onclick:stopPropagation>
             <div class="modal-header">
-                <h2>Remarks &mdash; @SelectedItem.ProductName</h2>
-                <button class="btn btn-ghost btn-sm" @onclick="() => SelectedItem = null">&#10005;</button>
+                <h2>Order #@so.OrderId &mdash; @si.ProductName ×@si.ActiveQty</h2>
+                <button class="btn btn-ghost btn-sm" @onclick="CloseItem">&#10005;</button>
             </div>
             <div class="modal-body">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+                    <div class="info-row"><span class="lbl">Status</span><span class="val"><span class="badge @StatusBadge(si.ItemStatus)">@StatusLabel(si.ItemStatus)</span></span></div>
+                    <div class="info-row"><span class="lbl">Vendor</span><span class="val">@(string.IsNullOrWhiteSpace(si.OutsourceVendor) ? "— not set —" : si.OutsourceVendor)</span></div>
+                    <div class="info-row"><span class="lbl">Customer</span><span class="val">@so.CustomerName</span></div>
+                    <div class="info-row"><span class="lbl">Branch</span><span class="val">@so.BranchLabel</span></div>
+                    <div class="info-row"><span class="lbl">Booked</span><span class="val">@so.CreatedAt.ToString("dd MMM yyyy")</span></div>
+                    <div class="info-row"><span class="lbl">Trial</span><span class="val">@(so.TrialDate?.ToString("dd MMM yyyy") ?? "—")</span></div>
+                    <div class="info-row"><span class="lbl">Delivery</span><span class="val">@(so.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</span></div>
+                    @if (!string.IsNullOrEmpty(si.ItemNotes))
+                    {
+                        <div class="info-row"><span class="lbl">Item notes</span><span class="val">@si.ItemNotes</span></div>
+                    }
+                </div>
+
+                <div class="section-divider">Change Status</div>
+                @StatusSelect(so, si, "max-width:280px")
+
+                <div class="section-divider" style="margin-top:18px">Status History</div>
+                <div class="table-wrap">
+                    <table>
+                        <thead><tr><th>Status</th><th>Date &amp; Time</th><th>Changed By</th></tr></thead>
+                        <tbody>
+                            @foreach (var h in ItemHistory)
+                            {
+                                <tr>
+                                    <td><span class="badge @StatusBadge(h.Stage)">@StatusLabel(h.Stage)</span></td>
+                                    <td style="font-size:12px">@ToPkt(h.ChangedAt).ToString("dd MMM yyyy, hh:mm tt")</td>
+                                    <td style="font-size:12px;color:var(--ink-muted)">@(h.ChangedBy ?? "—")</td>
+                                </tr>
+                            }
+                            @if (!ItemHistory.Any())
+                            {
+                                <tr><td colspan="3" style="text-align:center;color:var(--ink-faint);padding:12px">No status changes recorded yet.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="section-divider" style="margin-top:18px">Remarks</div>
                 @if (ItemRemarks.Any())
                 {
                     @foreach (var remark in ItemRemarks)
@@ -125,7 +146,7 @@
                         <div style="padding:8px;margin-bottom:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:6px">
                             <div style="display:flex;justify-content:space-between;margin-bottom:3px">
                                 <span class="badge @(remark.RemarkType == "trial" ? "badge-warning" : "badge-info")">@(remark.RemarkType ?? "general")</span>
-                                <span style="font-size:10px;color:var(--ink-faint)">@remark.CreatedAt.ToString("dd MMM yyyy, hh:mm tt") — @(remark.CreatedBy ?? "—")</span>
+                                <span style="font-size:10px;color:var(--ink-faint)">@ToPkt(remark.CreatedAt).ToString("dd MMM yyyy, hh:mm tt") — @(remark.CreatedBy ?? "—")</span>
                             </div>
                             <p style="font-size:12px;color:var(--ink);margin:0">@remark.RemarkText</p>
                         </div>
@@ -140,7 +161,7 @@
                     <button class="btn btn-primary btn-sm" @onclick="AddRemark">Add</button>
                 </div>
             </div>
-            <div class="modal-footer"><button class="btn btn-ghost" @onclick="() => SelectedItem = null">Close</button></div>
+            <div class="modal-footer"><button class="btn btn-ghost" @onclick="CloseItem">Close</button></div>
         </div>
     </div>
 }
@@ -163,6 +184,33 @@
     string Msg = "";
     bool IsErr;
     bool _busy;
+    int _statusTick;
+    List<FactoryStatusHistory> ItemHistory = new();
+
+    static readonly (string Value, string Label)[] OutsourceStatuses =
+    {
+        ("Pending", "Pending"), ("Sent to Factory", "Fabric Given"), ("In Progress", "In Progress"),
+        ("Sent for Trial", "Sent for Trial"), ("Completed", "Completed"), ("Sent to Shop", "Sent to Shop")
+    };
+
+    // Timestamps are stored in UTC; Pakistan is a fixed UTC+5.
+    static DateTime ToPkt(DateTime utc) => utc.AddHours(5);
+
+    // The key changes after every attempt, so a refused or failed change never leaves
+    // the dropdown showing a status that wasn't saved.
+    RenderFragment StatusSelect(FactoryOrder order, FactoryOrderItem item, string style) =>
+        @<select @key="@($"{order.BranchKey}-{item.OrderItemId}-{item.ItemStatus}-{_statusTick}")"
+                 class="form-control" style="@style" disabled="@_busy"
+                 @onchange="e => ChangeStatus(order, item, e.Value?.ToString() ?? item.ItemStatus)">
+            @if (!OutsourceStatuses.Any(s => s.Value == item.ItemStatus))
+            {
+                <option value="@item.ItemStatus" selected>@StatusLabel(item.ItemStatus) (current)</option>
+            }
+            @foreach (var s in OutsourceStatuses)
+            {
+                <option value="@s.Value" selected="@(s.Value == item.ItemStatus)">@s.Label</option>
+            }
+        </select>;
 
     IEnumerable<FactoryOrder> FilteredOrders => AllOrders
         .Where(o => string.IsNullOrEmpty(SearchText) ||
@@ -226,7 +274,7 @@
 
     async Task ChangeStatus(FactoryOrder order, FactoryOrderItem item, string newStatus)
     {
-        if (_busy) return;
+        if (_busy || newStatus == item.ItemStatus) { _statusTick++; return; }
         _busy = true;
         try
         {
@@ -234,10 +282,41 @@
                 AuthSvc.LoggedInUser ?? "factory");
             CacheSvc.Invalidate();
             await LoadOrders();
-            Msg = ""; IsErr = false;
+            await ReselectItem();
+            Msg = $"Order #{order.OrderId} · {item.ProductName} → {StatusLabel(newStatus)}."; IsErr = false;
         }
         catch (Exception ex) { Msg = $"Could not update the status: {ex.Message}"; IsErr = true; }
-        finally { _busy = false; }
+        finally { _busy = false; _statusTick++; }
+    }
+
+    async Task OpenItem(FactoryOrder order, FactoryOrderItem item)
+    {
+        SelectedOrder = order;
+        SelectedItem = item;
+        NewRemarkText = "";
+        ItemHistory = await OrderSvc.GetItemStatusHistoryAsync(order.BranchKey, item.OrderItemId);
+        ItemRemarks = await OrderSvc.GetRemarksAsync(order.BranchKey, item.OrderItemId);
+    }
+
+    void CloseItem()
+    {
+        SelectedItem = null;
+        SelectedOrder = null;
+        ItemHistory.Clear();
+        ItemRemarks.Clear();
+    }
+
+    // After a reload the list holds fresh objects; point the open popup at them.
+    async Task ReselectItem()
+    {
+        if (SelectedOrder == null || SelectedItem == null) return;
+        var branch = SelectedOrder.BranchKey;
+        var itemId = SelectedItem.OrderItemId;
+        var order = AllOrders.FirstOrDefault(o => o.BranchKey == branch && o.Items.Any(i => i.OrderItemId == itemId));
+        if (order == null) { CloseItem(); return; }
+        SelectedOrder = order;
+        SelectedItem = order.Items.First(i => i.OrderItemId == itemId);
+        ItemHistory = await OrderSvc.GetItemStatusHistoryAsync(branch, itemId);
     }
 
     // Item ids are only unique within a branch, so the branch is part of the key.
@@ -276,6 +355,7 @@
             EditingVendor = null;
             CacheSvc.Invalidate();
             await LoadOrders();
+            await ReselectItem();
             Msg = vendor.Length == 0
                 ? $"Vendor cleared for order #{order.OrderId} · {item.ProductName}."
                 : $"Order #{order.OrderId} · {item.ProductName} → vendor {vendor}.";
@@ -283,13 +363,6 @@
         }
         catch (Exception ex) { Msg = $"Could not save the vendor: {ex.Message}"; IsErr = true; }
         finally { _busy = false; }
-    }
-
-    async Task ViewRemarks(FactoryOrder order, FactoryOrderItem item)
-    {
-        SelectedItem = item;
-        SelectedOrder = order;
-        ItemRemarks = await OrderSvc.GetRemarksAsync(order.BranchKey, item.OrderItemId);
     }
 
     async Task AddRemark()

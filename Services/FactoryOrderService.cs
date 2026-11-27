@@ -185,6 +185,19 @@ public class FactoryOrderService
         catch { await tx.RollbackAsync(); throw; }
     }
 
+    // Every status change recorded for one order line, by the shop or the factory.
+    public async Task<List<FactoryStatusHistory>> GetItemStatusHistoryAsync(string branchKey, int orderItemId)
+    {
+        using var conn = _db.CreateForBranch(branchKey);
+        var r = await conn.QueryAsync<FactoryStatusHistory>(@"
+            SELECT history_id AS HistoryId, order_id AS OrderId, order_item_id AS OrderItemId,
+                   status AS Stage, changed_at AS ChangedAt, changed_by AS ChangedBy
+            FROM order_status_history
+            WHERE order_item_id=@id
+            ORDER BY changed_at ASC, history_id ASC", new { id = orderItemId });
+        return r.ToList();
+    }
+
     // ── Items sent to factory (pending acceptance) ──
 
     public async Task<List<FactoryOrder>> GetSentToFactoryAsync()
