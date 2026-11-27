@@ -5,7 +5,7 @@
 
 <div class="page-header">
     <h1>Outsource Settings</h1>
-    <p>Manage which garment types are outsourced</p>
+    <p>Manage which garment types and articles are outsourced</p>
 </div>
 
 <div class="card" style="max-width:600px">
@@ -45,14 +45,130 @@
     </div>
 </div>
 
+<div class="card" style="max-width:600px;margin-top:16px">
+    <div class="card-title">Outsourced Article Names</div>
+    <p style="font-size:12px;color:var(--ink-muted);margin-bottom:12px">
+        Any order item whose name is <strong>exactly</strong> one of these (capital letters don't matter)
+        moves to the Outsourcing page and leaves the in-house factory lists.
+        "Coat" will not catch "Waistcoat" — add each article you want by its full name.
+    </p>
+
+    @if (Articles.Any())
+    {
+        <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+            @foreach (var a in Articles)
+            {
+                var name = a;
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-s,6px)">
+                    <span style="font-weight:500;flex:1">@name</span>
+                    <span style="font-size:11px;color:var(--ink-faint)">@OpenLinesFor(name) open item(s)</span>
+                    <button class="btn btn-ghost btn-sm" style="color:var(--rust)" disabled="@_busy" @onclick="() => RemoveArticle(name)">Remove</button>
+                </div>
+            }
+        </div>
+    }
+    else
+    {
+        <p style="text-align:center;color:var(--ink-faint);padding:20px">No article names added yet.</p>
+    }
+
+    <div style="border-top:1px solid var(--border);padding-top:14px;margin-top:8px">
+        <div class="card-title" style="font-size:13px">Add Article Name</div>
+        <div style="display:flex;gap:8px">
+            <input id="newArticle" class="form-control" list="articleNameList" placeholder="Start typing an item name from the POS..."
+                   style="flex:1" @bind="NewArticle" @bind:event="oninput" @onkeydown="HandleArticleKey" />
+            <button class="btn btn-primary" @onclick="AddArticle" disabled="@(_busy || string.IsNullOrWhiteSpace(NewArticle))">Add</button>
+        </div>
+        <datalist id="articleNameList">
+            @foreach (var u in Usage) { <option value="@u.Name"></option> }
+        </datalist>
+        @if (!string.IsNullOrWhiteSpace(NewArticle))
+        {
+            var match = Usage.FirstOrDefault(u => string.Equals(u.Name, NewArticle.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+            {
+                <p style="font-size:12px;color:var(--green,#1F5C4C);margin-top:6px">
+                    Exact match: "@match.Name" — @match.OpenLines open item(s) will move to Outsourcing.
+                </p>
+            }
+            else
+            {
+                <p style="font-size:12px;color:var(--rust);margin-top:6px">
+                    No POS item has this exact name yet. Check the spelling, or pick a name from the suggestions.
+                    You can still add it to catch future items with this exact name.
+                </p>
+            }
+        }
+        @if (!string.IsNullOrEmpty(ArticleError))
+        {
+            <p style="color:var(--rust);font-size:12px;margin-top:6px">@ArticleError</p>
+        }
+    </div>
+</div>
+
 @code {
     List<OutsourceSetting> Settings = new();
     string NewType = "";
     string ErrorMsg = "";
 
+    List<string> Articles = new();
+    List<ArticleNameUsage> Usage = new();
+    string NewArticle = "";
+    string ArticleError = "";
+    bool _busy;
+
     protected override async Task OnInitializedAsync()
     {
         Settings = await OrderSvc.GetOutsourceSettingsAsync();
+        Articles = await OrderSvc.GetOutsourceArticlesAsync();
+        Usage = await OrderSvc.GetArticleNameUsageAsync();
+    }
+
+    int OpenLinesFor(string name) =>
+        Usage.FirstOrDefault(u => string.Equals(u.Name, name.Trim(), StringComparison.OrdinalIgnoreCase))?.OpenLines ?? 0;
+
+    async Task AddArticle()
+    {
+        ArticleError = "";
+        var trimmed = NewArticle.Trim();
+        if (trimmed.Length == 0 || _busy) return;
+        if (trimmed.Length > 200) { ArticleError = "Article names can be at most 200 characters."; return; }
+        if (Articles.Any(a => a.Equals(trimmed, StringComparison.OrdinalIgnoreCase)))
+        {
+            ArticleError = $"'{trimmed}' is already in the list.";
+            return;
+        }
+        _busy = true;
+        try
+        {
+            // Store the POS spelling when it exists so the list reads the same as the orders.
+            var known = Usage.FirstOrDefault(u => string.Equals(u.Name, trimmed, StringComparison.OrdinalIgnoreCase));
+            await OrderSvc.AddOutsourceArticleAsync(known?.Name ?? trimmed);
+            CacheSvc.Invalidate();
+            NewArticle = "";
+            Articles = await OrderSvc.GetOutsourceArticlesAsync();
+        }
+        catch (Exception ex) { ArticleError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    async Task RemoveArticle(string name)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await OrderSvc.RemoveOutsourceArticleAsync(name);
+            CacheSvc.Invalidate();
+            Articles = await OrderSvc.GetOutsourceArticlesAsync();
+        }
+        catch (Exception ex) { ArticleError = ex.Message; }
+        finally { _busy = false; }
+    }
+
+    async Task HandleArticleKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await AddArticle();
     }
 
     async Task Add()

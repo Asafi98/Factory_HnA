@@ -140,6 +140,8 @@ public class FactoryOrderItem
     public string? GarmentType { get; set; }
     public string? FactoryStage { get; set; }
     public bool IsOutsourced { get; set; }
+    public int OutsourceMatchFlag { get; set; }
+    public bool IsOutsourceMatch => OutsourceMatchFlag != 0;
     public string? OutsourceVendor { get; set; }
     public DateTime? SentToFactoryAt { get; set; }
     public DateTime? FactoryAcceptedAt { get; set; }
@@ -361,6 +363,12 @@ public class OutsourceSetting
     public string GarmentType { get; set; } = "";
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
+}
+
+public class ArticleNameUsage
+{
+    public string Name { get; set; } = "";
+    public int OpenLines { get; set; }
 }
 
 public class GarmentTypeSummary

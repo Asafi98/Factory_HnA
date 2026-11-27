@@ -10,6 +10,16 @@ public class FactoryOrderService
     private readonly FactoryDbConnections _db;
     public FactoryOrderService(FactoryDbConnections db) => _db = db;
 
+    // 1 when order item `oi` is outsourced: its garment type is listed, or its name exactly
+    // matches a listed article name (case-insensitive). NULLs are folded so NOT(...) is safe.
+    const string OutsourceMatchSql = @"IFNULL((
+            IFNULL(oi.garment_type, '') IN (SELECT garment_type FROM outsource_settings
+                                            WHERE is_active=1 AND garment_type IS NOT NULL)
+            OR CONVERT(TRIM(IFNULL(oi.product_name, '')) USING utf8mb4) COLLATE utf8mb4_general_ci IN
+               (SELECT CONVERT(TRIM(article_name) USING utf8mb4) COLLATE utf8mb4_general_ci
+                FROM outsource_articles WHERE is_active=1)
+        ), 0)";
+
     public async Task<List<FactoryOrder>> GetAllOrdersAsync()
     {
         var malirTask   = LoadBranchOrdersAsync(Branches.Malir,   "Malir Cantt Branch");
@@ -71,11 +81,20 @@ public class FactoryOrderService
                        oi.outsource_vendor AS OutsourceVendor,
                        oi.sent_to_factory_at AS SentToFactoryAt,
                        oi.factory_accepted_at AS FactoryAcceptedAt,
-                       oi.sent_to_shop_at AS SentToShopAt
+                       oi.sent_to_shop_at AS SentToShopAt,
+                       " + OutsourceMatchSql + @" AS OutsourceMatchFlag
                 FROM order_items oi
                 LEFT JOIN products p ON oi.pro_id = p.pro_id
                 WHERE oi.order_id IN @ids
                   AND oi.item_status <> 'Cancelled'", new { ids })).ToList();
+
+            // Outsourced lines live on the Outsourcing page only; an order made up
+            // entirely of them leaves the in-house lists.
+            var fullyOutsourced = items.GroupBy(i => i.OrderId)
+                                       .Where(g => g.All(i => i.IsOutsourceMatch))
+                                       .Select(g => g.Key).ToHashSet();
+            orders.RemoveAll(o => fullyOutsourced.Contains(o.OrderId));
+            items.RemoveAll(i => i.IsOutsourceMatch);
 
             if (items.Any())
             {
@@ -192,6 +211,7 @@ public class FactoryOrderService
             LEFT JOIN invoices i ON o.invoice_id=i.invoice_id
             INNER JOIN order_items oi ON o.order_id=oi.order_id
             WHERE oi.item_status = 'Sent to Factory'
+              AND NOT " + OutsourceMatchSql + @"
               AND o.order_status <> 'Cancelled'
               AND (i.invoice_id IS NULL OR i.is_void = 0)
             GROUP BY o.order_id, o.book_no, o.invoice_id, o.customerid, o.customername,
@@ -219,7 +239,8 @@ public class FactoryOrderService
                        oi.sent_to_shop_at AS SentToShopAt
                 FROM order_items oi
                 LEFT JOIN products p ON oi.pro_id = p.pro_id
-                WHERE oi.order_id IN @ids AND oi.item_status = 'Sent to Factory'",
+                WHERE oi.order_id IN @ids AND oi.item_status = 'Sent to Factory'
+                  AND NOT " + OutsourceMatchSql,
                 new { ids })).ToList();
 
             var map = allItems.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
@@ -381,6 +402,65 @@ public class FactoryOrderService
         }
     }
 
+    public async Task<List<string>> GetOutsourceArticlesAsync()
+    {
+        using var conn = _db.CreateForBranch(Branches.Malir);
+        var r = await conn.QueryAsync<string>(
+            "SELECT article_name FROM outsource_articles WHERE is_active=1 ORDER BY article_name");
+        return r.ToList();
+    }
+
+    public async Task AddOutsourceArticleAsync(string articleName)
+    {
+        foreach (var key in new[] { Branches.Malir, Branches.Bukhari })
+        {
+            using var conn = _db.CreateForBranch(key);
+            await conn.ExecuteAsync(@"
+                INSERT INTO outsource_articles(article_name) VALUES(@n)
+                ON DUPLICATE KEY UPDATE is_active=1, article_name=VALUES(article_name)",
+                new { n = articleName.Trim() });
+        }
+    }
+
+    public async Task RemoveOutsourceArticleAsync(string articleName)
+    {
+        foreach (var key in new[] { Branches.Malir, Branches.Bukhari })
+        {
+            using var conn = _db.CreateForBranch(key);
+            await conn.ExecuteAsync(
+                "UPDATE outsource_articles SET is_active=0 WHERE article_name=@n",
+                new { n = articleName });
+        }
+    }
+
+    // Every item name ever sold on an order in either branch, with how many open lines use it,
+    // so settings can offer exact names and preview what a name will catch.
+    public async Task<List<ArticleNameUsage>> GetArticleNameUsageAsync()
+    {
+        async Task<List<ArticleNameUsage>> Load(string key)
+        {
+            using var conn = _db.CreateForBranch(key);
+            var r = await conn.QueryAsync<ArticleNameUsage>(@"
+                SELECT TRIM(oi.product_name) AS Name,
+                       SUM(CASE WHEN o.order_status NOT IN ('Delivered','Cancelled')
+                                 AND IFNULL(oi.item_status,'') <> 'Cancelled' THEN 1 ELSE 0 END) AS OpenLines
+                FROM order_items oi
+                INNER JOIN orders o ON o.order_id = oi.order_id
+                WHERE TRIM(IFNULL(oi.product_name,'')) <> ''
+                GROUP BY TRIM(oi.product_name)");
+            return r.ToList();
+        }
+
+        var malir = Load(Branches.Malir);
+        var bukhari = Load(Branches.Bukhari);
+        await Task.WhenAll(malir, bukhari);
+        return malir.Result.Concat(bukhari.Result)
+            .GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new ArticleNameUsage { Name = g.First().Name, OpenLines = g.Sum(a => a.OpenLines) })
+            .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public async Task UpdateOutsourceVendorAsync(string branchKey, int orderItemId, string vendor)
     {
         using var conn = _db.CreateForBranch(branchKey);
@@ -472,10 +552,12 @@ public class FactoryOrderService
     // Saves an item line's stage, then recomputes the order stage and shop status from all lines.
     async Task ApplyItemStageAsync(MySqlConnection conn, MySqlTransaction tx, int orderId, int orderItemId, string? newStage, string by)
     {
+        // Outsourced lines never get a factory stage, so they must not hold back the shop status.
         var items = (await conn.QueryAsync<FactoryOrderItem>(@"
-            SELECT order_item_id AS OrderItemId, factory_stage AS FactoryStage FROM order_items
-            WHERE order_id=@id AND IFNULL(item_status,'') <> 'Cancelled'",
-            new { id = orderId }, tx)).ToList();
+            SELECT oi.order_item_id AS OrderItemId, oi.factory_stage AS FactoryStage FROM order_items oi
+            WHERE oi.order_id=@id AND IFNULL(oi.item_status,'') <> 'Cancelled'
+              AND (oi.order_item_id=@iid OR NOT " + OutsourceMatchSql + ")",
+            new { id = orderId, iid = orderItemId }, tx)).ToList();
 
         var before = items.Select(i => i.FactoryStage).ToList();
         var after = items.Select(i => i.OrderItemId == orderItemId ? newStage : i.FactoryStage).ToList();
@@ -726,8 +808,8 @@ public class FactoryOrderService
             LEFT JOIN invoices i ON o.invoice_id = i.invoice_id
             LEFT JOIN customer c ON o.customerid = c.customerid
             INNER JOIN order_items oi ON o.order_id = oi.order_id
-            INNER JOIN outsource_settings os ON oi.garment_type = os.garment_type AND os.is_active = 1
-            WHERE o.order_status <> 'Cancelled'
+            WHERE " + OutsourceMatchSql + @"
+              AND o.order_status <> 'Cancelled'
               AND (i.invoice_id IS NULL OR i.is_void = 0)
               AND oi.item_status <> 'Cancelled'
             ORDER BY o.created_at DESC")).ToList();
@@ -752,8 +834,8 @@ public class FactoryOrderService
                        oi.sent_to_shop_at AS SentToShopAt
                 FROM order_items oi
                 LEFT JOIN products p ON oi.pro_id = p.pro_id
-                INNER JOIN outsource_settings os ON oi.garment_type = os.garment_type AND os.is_active = 1
                 WHERE oi.order_id IN @ids
+                  AND " + OutsourceMatchSql + @"
                   AND oi.item_status <> 'Cancelled'", new { ids })).ToList();
 
             var itemsMap = items.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
