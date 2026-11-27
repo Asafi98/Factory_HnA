@@ -122,6 +122,7 @@ public class FactoryOrderService
 
     // ── Per-item status tracking ──
 
+    // Sets a whole order line; any per-piece statuses are cleared so every piece follows it.
     public async Task UpdateItemStatusAsync(string branchKey, int orderItemId, string status, string? changedBy)
     {
         using var conn = _db.CreateForBranch(branchKey);
@@ -129,6 +130,71 @@ public class FactoryOrderService
         using var tx = await conn.BeginTransactionAsync();
         try
         {
+            await conn.ExecuteAsync(
+                "DELETE FROM outsource_unit_status WHERE order_item_id=@id",
+                new { id = orderItemId }, tx);
+            await ApplyItemStatusAsync(conn, tx, orderItemId, status, changedBy);
+            await tx.CommitAsync();
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    // Moves one piece of a multi-quantity outsourced line (e.g. trouser 2 of 2). The line's
+    // shop-facing status becomes its least-progressed piece.
+    public async Task UpdateUnitStatusAsync(string branchKey, int orderItemId, int unitNo, string status, string? changedBy)
+    {
+        using var conn = _db.CreateForBranch(branchKey);
+        await conn.OpenAsync();
+        using var tx = await conn.BeginTransactionAsync();
+        try
+        {
+            var item = await conn.QuerySingleAsync<FactoryOrderItem>(@"
+                SELECT order_item_id AS OrderItemId, order_id AS OrderId, quantity AS Quantity,
+                       IFNULL(cancelled_qty, 0) AS CancelledQty, IFNULL(item_status, 'Pending') AS ItemStatus
+                FROM order_items WHERE order_item_id=@id",
+                new { id = orderItemId }, tx);
+
+            if (unitNo < 1 || unitNo > item.UnitCount)
+                throw new InvalidOperationException("That piece is no longer on this order. Refresh the page and try again.");
+
+            var saved = (await conn.QueryAsync<FactoryUnitStage>(@"
+                SELECT order_item_id AS OrderItemId, unit_no AS UnitNo, status AS Stage
+                FROM outsource_unit_status WHERE order_item_id=@id",
+                new { id = orderItemId }, tx)).ToDictionary(u => u.UnitNo, u => u.Stage ?? item.ItemStatus);
+
+            var units = Enumerable.Range(1, item.UnitCount)
+                .Select(n => n == unitNo ? status : saved.TryGetValue(n, out var s) ? s : item.ItemStatus)
+                .ToList();
+
+            await conn.ExecuteAsync(@"
+                INSERT INTO outsource_unit_status(order_item_id, unit_no, status) VALUES(@iid, @n, @s)
+                ON DUPLICATE KEY UPDATE status=VALUES(status)",
+                units.Select((s, i) => new { iid = orderItemId, n = i + 1, s }), tx);
+
+            await conn.ExecuteAsync(@"
+                INSERT INTO outsource_unit_history(order_id, order_item_id, unit_no, status, changed_by)
+                VALUES(@oid, @iid, @n, @s, NULLIF(@by, ''))",
+                new { oid = item.OrderId, iid = orderItemId, n = unitNo, s = status, by = changedBy ?? string.Empty }, tx);
+
+            var lineStatus = LeastProgressedStatus(units);
+            if (lineStatus != item.ItemStatus)
+                await ApplyItemStatusAsync(conn, tx, orderItemId, lineStatus, changedBy);
+
+            await tx.CommitAsync();
+        }
+        catch { await tx.RollbackAsync(); throw; }
+    }
+
+    // Order of the outsourcing workflow. Anything else (e.g. "Trial Done" set by the shop)
+    // ranks lowest, so a piece still carrying it holds the line back until it is moved.
+    public static readonly string[] OutsourceStatusOrder =
+        { "Pending", "Sent to Factory", "In Progress", "Sent for Trial", "Completed", "Sent to Shop" };
+
+    public static string LeastProgressedStatus(IEnumerable<string> statuses) =>
+        statuses.OrderBy(s => Array.IndexOf(OutsourceStatusOrder, s)).First();
+
+    async Task ApplyItemStatusAsync(MySqlConnection conn, MySqlTransaction tx, int orderItemId, string status, string? changedBy)
+    {
             var orderId = await conn.QuerySingleAsync<int>(
                 "SELECT order_id FROM order_items WHERE order_item_id=@id",
                 new { id = orderItemId }, tx);
@@ -179,23 +245,26 @@ public class FactoryOrderService
                 await conn.ExecuteAsync(
                     "UPDATE orders SET closed_at=NOW() WHERE order_id=@id AND closed_at IS NULL",
                     new { id = orderId }, tx);
-
-            await tx.CommitAsync();
-        }
-        catch { await tx.RollbackAsync(); throw; }
     }
 
-    // Every status change recorded for one order line, by the shop or the factory.
+    // Every status change for one order line (shop or factory), plus per-piece changes.
+    // Read separately and merged here: the two tables may not share a collation.
     public async Task<List<FactoryStatusHistory>> GetItemStatusHistoryAsync(string branchKey, int orderItemId)
     {
         using var conn = _db.CreateForBranch(branchKey);
-        var r = await conn.QueryAsync<FactoryStatusHistory>(@"
+        var line = await conn.QueryAsync<FactoryStatusHistory>(@"
             SELECT history_id AS HistoryId, order_id AS OrderId, order_item_id AS OrderItemId,
                    status AS Stage, changed_at AS ChangedAt, changed_by AS ChangedBy
             FROM order_status_history
-            WHERE order_item_id=@id
-            ORDER BY changed_at ASC, history_id ASC", new { id = orderItemId });
-        return r.ToList();
+            WHERE order_item_id=@id", new { id = orderItemId });
+        var pieces = await conn.QueryAsync<FactoryStatusHistory>(@"
+            SELECT id AS HistoryId, order_id AS OrderId, order_item_id AS OrderItemId, unit_no AS UnitNo,
+                   status AS Stage, changed_at AS ChangedAt, changed_by AS ChangedBy
+            FROM outsource_unit_history
+            WHERE order_item_id=@id", new { id = orderItemId });
+        return line.Concat(pieces)
+            .OrderBy(h => h.ChangedAt).ThenBy(h => !h.UnitNo.HasValue).ThenBy(h => h.HistoryId)
+            .ToList();
     }
 
     // ── Items sent to factory (pending acceptance) ──
@@ -850,6 +919,18 @@ public class FactoryOrderService
                 WHERE oi.order_id IN @ids
                   AND " + OutsourceMatchSql + @"
                   AND oi.item_status <> 'Cancelled'", new { ids })).ToList();
+
+            if (items.Any())
+            {
+                var itemIds = items.Select(i => i.OrderItemId).ToList();
+                var units = await conn.QueryAsync<FactoryUnitStage>(@"
+                    SELECT order_item_id AS OrderItemId, unit_no AS UnitNo, status AS Stage
+                    FROM outsource_unit_status WHERE order_item_id IN @itemIds", new { itemIds });
+                var unitMap = units.GroupBy(u => u.OrderItemId)
+                                   .ToDictionary(g => g.Key, g => g.ToDictionary(u => u.UnitNo, u => u.Stage ?? ""));
+                foreach (var i in items)
+                    if (unitMap.TryGetValue(i.OrderItemId, out var us)) i.UnitStatuses = us;
+            }
 
             var itemsMap = items.GroupBy(i => i.OrderId).ToDictionary(g => g.Key, g => g.ToList());
             foreach (var o in orders)

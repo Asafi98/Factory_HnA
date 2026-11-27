@@ -155,6 +155,12 @@ public class FactoryOrderItem
     public string? StageOfUnit(int unitNo) => UnitStages.TryGetValue(unitNo, out var s) ? s : FactoryStage;
     public bool HasMixedUnits => UnitCount > 1 &&
         Enumerable.Range(1, UnitCount).Select(StageOfUnit).Distinct().Count() > 1;
+
+    // Per-piece outsourcing statuses. Empty means every piece is at ItemStatus.
+    public Dictionary<int, string> UnitStatuses { get; set; } = new();
+    public string StatusOfUnit(int unitNo) => UnitStatuses.TryGetValue(unitNo, out var s) ? s : ItemStatus;
+    public bool HasMixedStatuses => UnitCount > 1 &&
+        Enumerable.Range(1, UnitCount).Select(StatusOfUnit).Distinct().Count() > 1;
 }
 
 public class FactoryUnitStage

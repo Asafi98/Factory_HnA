@@ -33,18 +33,28 @@
 
 <div class="card">
     <div class="table-wrap"><table>
-        <thead><tr><th>Order#</th><th>Branch</th><th>Item</th><th>Garment</th><th>Customer</th><th>Vendor</th><th>Booking</th><th>Trial</th><th>Delivery</th><th>Status</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Status</th><th>Ordered</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Item</th><th>Qty</th><th>Vendor</th><th>Trial</th><th>Delivery</th><th>Actions</th></tr></thead>
         <tbody>
             @foreach (var order in FilteredOrders)
             {
                 foreach (var item in order.Items.Where(i => MatchFilter(i)))
                 {
                     <tr>
+                        <td>
+                            <span class="badge @StatusBadge(item.ItemStatus)">@StatusLabel(item.ItemStatus)</span>
+                            @if (item.HasMixedStatuses)
+                            {
+                                <div style="font-size:10px;color:var(--ink-muted);margin-top:3px" title="@PieceSummary(item)">pieces differ · View</div>
+                            }
+                        </td>
+                        <td style="font-size:12px;white-space:nowrap">@ToPkt(order.CreatedAt).ToString("dd MMM yy")</td>
                         <td style="font-weight:600">#@order.OrderId</td>
-                        <td style="font-size:11px;color:#888">@order.BranchLabel</td>
-                        <td style="font-weight:500">@item.ProductName <span style="color:var(--ink-faint);font-size:11px">x@(item.ActiveQty)</span>@if(item.CancelledQty > 0){<span style="color:var(--rust);font-size:10px;margin-left:3px">(@item.CancelledQty cancelled)</span>}</td>
-                        <td><span class="badge badge-info">@(item.GarmentType ?? "—")</span></td>
-                        <td>@order.CustomerName</td>
+                        <td style="font-weight:600;color:var(--gold)">@BookNoCell(order)</td>
+                        <td style="font-weight:500">@order.CustomerName</td>
+                        <td style="font-size:12px;color:var(--ink-muted)">@(order.CustomerPhone ?? "—")</td>
+                        <td style="font-size:11px;color:var(--ink-muted)">@order.BranchLabel</td>
+                        <td style="font-size:12px">@item.ProductName@(!string.IsNullOrEmpty(item.ItemNotes) ? $" ({item.ItemNotes})" : "")</td>
+                        <td style="text-align:center;font-size:12px">@item.ActiveQty@if (item.CancelledQty > 0){<div style="color:var(--rust);font-size:10px">@item.CancelledQty cancelled</div>}</td>
                         <td style="white-space:nowrap">
                             @if (IsEditingVendor(order, item))
                             {
@@ -67,10 +77,8 @@
                                 </button>
                             }
                         </td>
-                        <td style="font-size:11px">@order.CreatedAt.ToString("dd MMM")</td>
-                        <td style="font-size:11px">@(order.TrialDate?.ToString("dd MMM") ?? "—")</td>
-                        <td style="font-size:11px">@(order.DeliveryDate?.ToString("dd MMM") ?? "—")</td>
-                        <td><span class="badge @StatusBadge(item.ItemStatus)">@StatusLabel(item.ItemStatus)</span></td>
+                        <td style="font-size:12px">@(order.TrialDate?.ToString("dd MMM") ?? "—")</td>
+                        <td style="font-size:12px">@(order.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</td>
                         <td style="white-space:nowrap">
                             @StatusSelect(order, item, "width:150px;padding:4px 6px;font-size:12px;display:inline-block")
                             <button class="btn btn-ghost btn-sm" style="margin-left:4px" @onclick="() => OpenItem(order, item)">View</button>
@@ -80,7 +88,7 @@
             }
             @if (!FilteredOrders.Any())
             {
-                <tr><td colspan="11" style="text-align:center;color:var(--ink-faint);padding:24px">No outsourced items found.</td></tr>
+                <tr><td colspan="13" style="text-align:center;color:var(--ink-faint);padding:24px">No outsourced items found.</td></tr>
             }
         </tbody>
     </table></div>
@@ -96,16 +104,18 @@
     <div class="modal-overlay" @onclick="CloseItem">
         <div class="modal-box" style="max-width:680px" @onclick:stopPropagation>
             <div class="modal-header">
-                <h2>Order #@so.OrderId &mdash; @si.ProductName ×@si.ActiveQty</h2>
+                <h2>Order #@so.OrderId &mdash; @so.CustomerName</h2>
                 <button class="btn btn-ghost btn-sm" @onclick="CloseItem">&#10005;</button>
             </div>
             <div class="modal-body">
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+                    <div class="info-row"><span class="lbl">Item</span><span class="val">@si.ProductName ×@si.ActiveQty</span></div>
                     <div class="info-row"><span class="lbl">Status</span><span class="val"><span class="badge @StatusBadge(si.ItemStatus)">@StatusLabel(si.ItemStatus)</span></span></div>
+                    <div class="info-row"><span class="lbl">Book No.</span><span class="val" style="font-weight:600;color:var(--gold)">@BookNoCell(so)</span></div>
                     <div class="info-row"><span class="lbl">Vendor</span><span class="val">@(string.IsNullOrWhiteSpace(si.OutsourceVendor) ? "— not set —" : si.OutsourceVendor)</span></div>
-                    <div class="info-row"><span class="lbl">Customer</span><span class="val">@so.CustomerName</span></div>
+                    <div class="info-row"><span class="lbl">Phone</span><span class="val">@(so.CustomerPhone ?? "—")</span></div>
                     <div class="info-row"><span class="lbl">Branch</span><span class="val">@so.BranchLabel</span></div>
-                    <div class="info-row"><span class="lbl">Booked</span><span class="val">@so.CreatedAt.ToString("dd MMM yyyy")</span></div>
+                    <div class="info-row"><span class="lbl">Ordered On</span><span class="val">@ToPkt(so.CreatedAt).ToString("dd MMM yyyy")</span></div>
                     <div class="info-row"><span class="lbl">Trial</span><span class="val">@(so.TrialDate?.ToString("dd MMM yyyy") ?? "—")</span></div>
                     <div class="info-row"><span class="lbl">Delivery</span><span class="val">@(so.DeliveryDate?.ToString("dd MMM yyyy") ?? "—")</span></div>
                     @if (!string.IsNullOrEmpty(si.ItemNotes))
@@ -114,25 +124,44 @@
                     }
                 </div>
 
-                <div class="section-divider">Change Status</div>
+                <div class="section-divider">@(si.UnitCount > 1 ? "Change Status — whole line" : "Change Status")</div>
                 @StatusSelect(so, si, "max-width:280px")
+
+                @if (si.UnitCount > 1)
+                {
+                    <div class="section-divider" style="margin-top:18px">Pieces</div>
+                    <p style="font-size:12px;color:var(--ink-muted);margin:0 0 6px">
+                        Move pieces one at a time. The line, and the shop, show the least-progressed piece.
+                    </p>
+                    @for (var n = 1; n <= si.UnitCount; n++)
+                    {
+                        var unitNo = n;
+                        var us = si.StatusOfUnit(unitNo);
+                        <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+                            <span style="flex:1">@si.ProductName @unitNo of @si.UnitCount</span>
+                            <span class="badge @StatusBadge(us)">@StatusLabel(us)</span>
+                            @UnitSelect(so, si, unitNo)
+                        </div>
+                    }
+                }
 
                 <div class="section-divider" style="margin-top:18px">Status History</div>
                 <div class="table-wrap">
                     <table>
-                        <thead><tr><th>Status</th><th>Date &amp; Time</th><th>Changed By</th></tr></thead>
+                        <thead><tr><th>Status</th><th>Piece</th><th>Date &amp; Time</th><th>Changed By</th></tr></thead>
                         <tbody>
                             @foreach (var h in ItemHistory)
                             {
                                 <tr>
                                     <td><span class="badge @StatusBadge(h.Stage)">@StatusLabel(h.Stage)</span></td>
+                                    <td style="font-size:12px;color:var(--ink-muted)">@(h.UnitNo.HasValue ? $"{h.UnitNo} of {si.UnitCount}" : "Whole line")</td>
                                     <td style="font-size:12px">@ToPkt(h.ChangedAt).ToString("dd MMM yyyy, hh:mm tt")</td>
                                     <td style="font-size:12px;color:var(--ink-muted)">@(h.ChangedBy ?? "—")</td>
                                 </tr>
                             }
                             @if (!ItemHistory.Any())
                             {
-                                <tr><td colspan="3" style="text-align:center;color:var(--ink-faint);padding:12px">No status changes recorded yet.</td></tr>
+                                <tr><td colspan="4" style="text-align:center;color:var(--ink-faint);padding:12px">No status changes recorded yet.</td></tr>
                             }
                         </tbody>
                     </table>
@@ -211,6 +240,107 @@
                 <option value="@s.Value" selected="@(s.Value == item.ItemStatus)">@s.Label</option>
             }
         </select>;
+
+    RenderFragment UnitSelect(FactoryOrder order, FactoryOrderItem item, int unitNo)
+    {
+        var current = item.StatusOfUnit(unitNo);
+        return @<select @key="@($"{order.BranchKey}-{item.OrderItemId}-{unitNo}-{current}-{_statusTick}")"
+                        class="form-control" style="width:170px;padding:4px 6px;font-size:12px" disabled="@_busy"
+                        @onchange="e => ChangeUnitStatus(order, item, unitNo, e.Value?.ToString() ?? current)">
+            @if (!OutsourceStatuses.Any(s => s.Value == current))
+            {
+                <option value="@current" selected>@StatusLabel(current) (current)</option>
+            }
+            @foreach (var s in OutsourceStatuses)
+            {
+                <option value="@s.Value" selected="@(s.Value == current)">@s.Label</option>
+            }
+        </select>;
+    }
+
+    RenderFragment BookNoCell(FactoryOrder order) =>
+        @<span>
+            @if (IsEditingBookNo(order))
+            {
+                <span style="display:inline-flex;gap:4px;align-items:center">
+                    <input class="form-control" style="width:90px;padding:2px 6px;font-size:12px" maxlength="30"
+                           placeholder="Book no." @bind="BookNoInput" @bind:event="oninput" @onkeydown="e => BookNoKey(e, order)" />
+                    <button class="btn btn-primary btn-sm" style="padding:2px 8px" disabled="@_busy" @onclick="() => SaveBookNo(order)">OK</button>
+                    <button class="btn btn-ghost btn-sm" style="padding:2px 6px" title="Cancel" @onclick="CancelBookNo">✕</button>
+                </span>
+            }
+            else
+            {
+                <span style="cursor:pointer;text-decoration:underline dotted" title="Click to set the book number"
+                      @onclick="() => StartEditBookNo(order)">@(string.IsNullOrWhiteSpace(order.BookNo) ? "—" : order.BookNo)</span>
+            }
+        </span>;
+
+    (string Branch, int OrderId)? EditingBookNo;
+    string BookNoInput = "";
+
+    bool IsEditingBookNo(FactoryOrder order) =>
+        EditingBookNo is { } e && e.Branch == order.BranchKey && e.OrderId == order.OrderId;
+
+    void StartEditBookNo(FactoryOrder order)
+    {
+        EditingBookNo = (order.BranchKey, order.OrderId);
+        BookNoInput = order.BookNo ?? "";
+    }
+
+    void CancelBookNo()
+    {
+        EditingBookNo = null;
+        BookNoInput = "";
+    }
+
+    async Task BookNoKey(KeyboardEventArgs e, FactoryOrder order)
+    {
+        if (e.Key == "Enter") await SaveBookNo(order);
+        else if (e.Key == "Escape") CancelBookNo();
+    }
+
+    async Task SaveBookNo(FactoryOrder order)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            var bookNo = BookNoInput.Trim();
+            if (bookNo.Length > 30) { Msg = "Book numbers can be at most 30 characters."; IsErr = true; return; }
+            await OrderSvc.UpdateBookNoAsync(order.OrderId, order.BranchKey, bookNo);
+            CacheSvc.Invalidate();
+            // The same order can appear on several rows (one per outsourced item).
+            foreach (var o in AllOrders.Where(o => o.BranchKey == order.BranchKey && o.OrderId == order.OrderId))
+                o.BookNo = bookNo.Length == 0 ? null : bookNo;
+            order.BookNo = bookNo.Length == 0 ? null : bookNo;
+            EditingBookNo = null;
+            Msg = bookNo.Length == 0 ? $"Book No. cleared for order #{order.OrderId}." : $"Order #{order.OrderId} → Book No. {bookNo}.";
+            IsErr = false;
+        }
+        catch (Exception ex) { Msg = $"Could not save the book number: {ex.Message}"; IsErr = true; }
+        finally { _busy = false; }
+    }
+
+    async Task ChangeUnitStatus(FactoryOrder order, FactoryOrderItem item, int unitNo, string newStatus)
+    {
+        if (_busy || newStatus == item.StatusOfUnit(unitNo)) { _statusTick++; return; }
+        _busy = true;
+        try
+        {
+            await OrderSvc.UpdateUnitStatusAsync(order.BranchKey, item.OrderItemId, unitNo, newStatus,
+                AuthSvc.LoggedInUser ?? "factory");
+            CacheSvc.Invalidate();
+            await LoadOrders();
+            await ReselectItem();
+            Msg = $"Order #{order.OrderId} · {item.ProductName} {unitNo} of {item.UnitCount} → {StatusLabel(newStatus)}."; IsErr = false;
+        }
+        catch (Exception ex) { Msg = $"Could not update the piece: {ex.Message}"; IsErr = true; }
+        finally { _busy = false; _statusTick++; }
+    }
+
+    static string PieceSummary(FactoryOrderItem i) => string.Join(", ",
+        Enumerable.Range(1, i.UnitCount).Select(n => $"#{n}: {i.StatusOfUnit(n)}"));
 
     IEnumerable<FactoryOrder> FilteredOrders => AllOrders
         .Where(o => string.IsNullOrEmpty(SearchText) ||
