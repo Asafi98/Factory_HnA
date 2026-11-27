@@ -27,13 +27,13 @@
                 <option>@gt</option>
             }
         </select>
-        <input class="form-control" placeholder="Search customer or vendor..." style="flex:1;min-width:150px" @bind="SearchText" />
+        <input class="form-control" placeholder="Search customer, vendor or O/S book no..." style="flex:1;min-width:150px" @bind="SearchText" />
     </div>
 </div>
 
 <div class="card">
     <div class="table-wrap"><table>
-        <thead><tr><th>Status</th><th>Ordered</th><th>Order#</th><th>Book No.</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Item</th><th>Qty</th><th>Vendor</th><th>Trial</th><th>Delivery</th><th>Actions</th></tr></thead>
+        <thead><tr><th>Status</th><th>Ordered</th><th>Order#</th><th title="Number in the outsourcing sizing book (separate from the in-house book)">O/S Book No.</th><th>Customer</th><th>Phone</th><th>Branch</th><th>Item</th><th>Qty</th><th>Vendor</th><th>Trial</th><th>Delivery</th><th>Actions</th></tr></thead>
         <tbody>
             @foreach (var order in FilteredOrders)
             {
@@ -49,7 +49,7 @@
                         </td>
                         <td style="font-size:12px;white-space:nowrap">@ToPkt(order.CreatedAt).ToString("dd MMM yy")</td>
                         <td style="font-weight:600">#@order.OrderId</td>
-                        <td style="font-weight:600;color:var(--gold)">@BookNoCell(order)</td>
+                        <td style="font-weight:600;color:var(--gold)">@BookNoCell(order, item)</td>
                         <td style="font-weight:500">@order.CustomerName</td>
                         <td style="font-size:12px;color:var(--ink-muted)">@(order.CustomerPhone ?? "—")</td>
                         <td style="font-size:11px;color:var(--ink-muted)">@order.BranchLabel</td>
@@ -111,7 +111,7 @@
                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
                     <div class="info-row"><span class="lbl">Item</span><span class="val">@si.ProductName ×@si.ActiveQty</span></div>
                     <div class="info-row"><span class="lbl">Status</span><span class="val"><span class="badge @StatusBadge(si.ItemStatus)">@StatusLabel(si.ItemStatus)</span></span></div>
-                    <div class="info-row"><span class="lbl">Book No.</span><span class="val" style="font-weight:600;color:var(--gold)">@BookNoCell(so)</span></div>
+                    <div class="info-row"><span class="lbl">Outsource Book No.</span><span class="val" style="font-weight:600;color:var(--gold)">@BookNoCell(so, si)</span></div>
                     <div class="info-row"><span class="lbl">Vendor</span><span class="val">@(string.IsNullOrWhiteSpace(si.OutsourceVendor) ? "— not set —" : si.OutsourceVendor)</span></div>
                     <div class="info-row"><span class="lbl">Phone</span><span class="val">@(so.CustomerPhone ?? "—")</span></div>
                     <div class="info-row"><span class="lbl">Branch</span><span class="val">@so.BranchLabel</span></div>
@@ -258,34 +258,35 @@
         </select>;
     }
 
-    RenderFragment BookNoCell(FactoryOrder order) =>
+    RenderFragment BookNoCell(FactoryOrder order, FactoryOrderItem item) =>
         @<span>
-            @if (IsEditingBookNo(order))
+            @if (IsEditingBookNo(order, item))
             {
                 <span style="display:inline-flex;gap:4px;align-items:center">
                     <input class="form-control" style="width:90px;padding:2px 6px;font-size:12px" maxlength="30"
-                           placeholder="Book no." @bind="BookNoInput" @bind:event="oninput" @onkeydown="e => BookNoKey(e, order)" />
-                    <button class="btn btn-primary btn-sm" style="padding:2px 8px" disabled="@_busy" @onclick="() => SaveBookNo(order)">OK</button>
+                           placeholder="Book no." @bind="BookNoInput" @bind:event="oninput" @onkeydown="e => BookNoKey(e, order, item)" />
+                    <button class="btn btn-primary btn-sm" style="padding:2px 8px" disabled="@_busy" @onclick="() => SaveBookNo(order, item)">OK</button>
                     <button class="btn btn-ghost btn-sm" style="padding:2px 6px" title="Cancel" @onclick="CancelBookNo">✕</button>
                 </span>
             }
             else
             {
-                <span style="cursor:pointer;text-decoration:underline dotted" title="Click to set the book number"
-                      @onclick="() => StartEditBookNo(order)">@(string.IsNullOrWhiteSpace(order.BookNo) ? "—" : order.BookNo)</span>
+                <span style="cursor:pointer;text-decoration:underline dotted" title="Click to set this item's outsourcing book number"
+                      @onclick="() => StartEditBookNo(order, item)">@(string.IsNullOrWhiteSpace(item.OutsourceBookNo) ? "—" : item.OutsourceBookNo)</span>
             }
         </span>;
 
-    (string Branch, int OrderId)? EditingBookNo;
+    // Each outsourced line has its own number in the outsourcing sizing book.
+    (string Branch, int ItemId)? EditingBookNo;
     string BookNoInput = "";
 
-    bool IsEditingBookNo(FactoryOrder order) =>
-        EditingBookNo is { } e && e.Branch == order.BranchKey && e.OrderId == order.OrderId;
+    bool IsEditingBookNo(FactoryOrder order, FactoryOrderItem item) =>
+        EditingBookNo is { } e && e.Branch == order.BranchKey && e.ItemId == item.OrderItemId;
 
-    void StartEditBookNo(FactoryOrder order)
+    void StartEditBookNo(FactoryOrder order, FactoryOrderItem item)
     {
-        EditingBookNo = (order.BranchKey, order.OrderId);
-        BookNoInput = order.BookNo ?? "";
+        EditingBookNo = (order.BranchKey, item.OrderItemId);
+        BookNoInput = item.OutsourceBookNo ?? "";
     }
 
     void CancelBookNo()
@@ -294,13 +295,13 @@
         BookNoInput = "";
     }
 
-    async Task BookNoKey(KeyboardEventArgs e, FactoryOrder order)
+    async Task BookNoKey(KeyboardEventArgs e, FactoryOrder order, FactoryOrderItem item)
     {
-        if (e.Key == "Enter") await SaveBookNo(order);
+        if (e.Key == "Enter") await SaveBookNo(order, item);
         else if (e.Key == "Escape") CancelBookNo();
     }
 
-    async Task SaveBookNo(FactoryOrder order)
+    async Task SaveBookNo(FactoryOrder order, FactoryOrderItem item)
     {
         if (_busy) return;
         _busy = true;
@@ -308,14 +309,13 @@
         {
             var bookNo = BookNoInput.Trim();
             if (bookNo.Length > 30) { Msg = "Book numbers can be at most 30 characters."; IsErr = true; return; }
-            await OrderSvc.UpdateBookNoAsync(order.OrderId, order.BranchKey, bookNo);
+            await OrderSvc.UpdateOutsourceBookNoAsync(order.BranchKey, item.OrderItemId, bookNo);
             CacheSvc.Invalidate();
-            // The same order can appear on several rows (one per outsourced item).
-            foreach (var o in AllOrders.Where(o => o.BranchKey == order.BranchKey && o.OrderId == order.OrderId))
-                o.BookNo = bookNo.Length == 0 ? null : bookNo;
-            order.BookNo = bookNo.Length == 0 ? null : bookNo;
+            item.OutsourceBookNo = bookNo.Length == 0 ? null : bookNo;
             EditingBookNo = null;
-            Msg = bookNo.Length == 0 ? $"Book No. cleared for order #{order.OrderId}." : $"Order #{order.OrderId} → Book No. {bookNo}.";
+            Msg = bookNo.Length == 0
+                ? $"Outsource Book No. cleared for order #{order.OrderId} · {item.ProductName}."
+                : $"Order #{order.OrderId} · {item.ProductName} → Outsource Book No. {bookNo}.";
             IsErr = false;
         }
         catch (Exception ex) { Msg = $"Could not save the book number: {ex.Message}"; IsErr = true; }
@@ -345,8 +345,10 @@
     IEnumerable<FactoryOrder> FilteredOrders => AllOrders
         .Where(o => string.IsNullOrEmpty(SearchText) ||
             o.CustomerName.Contains(SearchText, StringComparison.OrdinalIgnoreCase) ||
-            o.Items.Any(i => !string.IsNullOrEmpty(i.OutsourceVendor) &&
-                i.OutsourceVendor.Contains(SearchText, StringComparison.OrdinalIgnoreCase)))
+            o.Items.Any(i => (!string.IsNullOrEmpty(i.OutsourceVendor) &&
+                                 i.OutsourceVendor.Contains(SearchText, StringComparison.OrdinalIgnoreCase)) ||
+                             (!string.IsNullOrEmpty(i.OutsourceBookNo) &&
+                                 i.OutsourceBookNo.Contains(SearchText, StringComparison.OrdinalIgnoreCase))))
         .Where(o => o.Items.Any(i => MatchFilter(i)));
 
     bool MatchFilter(FactoryOrderItem i)

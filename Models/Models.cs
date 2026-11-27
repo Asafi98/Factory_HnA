@@ -140,6 +140,8 @@ public class FactoryOrderItem
     public string? GarmentType { get; set; }
     public string? FactoryStage { get; set; }
     public bool IsOutsourced { get; set; }
+    // Number in the outsourcing sizing book; separate from the order's in-house book_no.
+    public string? OutsourceBookNo { get; set; }
     public int OutsourceMatchFlag { get; set; }
     public bool IsOutsourceMatch => OutsourceMatchFlag != 0;
     public string? OutsourceVendor { get; set; }

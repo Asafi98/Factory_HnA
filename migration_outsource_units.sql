@@ -27,3 +27,7 @@ CREATE TABLE IF NOT EXISTS outsource_unit_history (
     INDEX idx_ouh_item (order_item_id),
     CONSTRAINT fk_ouh_item FOREIGN KEY (order_item_id) REFERENCES order_items(order_item_id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Outsourcing sizing-book number, per order line. Separate from orders.book_no (the
+-- in-house sizing book), so editing one never changes the other. Run once per branch.
+ALTER TABLE order_items ADD COLUMN outsource_book_no VARCHAR(30) NULL;

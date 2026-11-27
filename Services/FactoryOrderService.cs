@@ -797,6 +797,15 @@ public class FactoryOrderService
         return (received, completed, totalChanges);
     }
 
+    // Outsourcing sizing-book number for one order line; never touches orders.book_no.
+    public async Task UpdateOutsourceBookNoAsync(string branchKey, int orderItemId, string? bookNo)
+    {
+        using var conn = _db.CreateForBranch(branchKey);
+        await conn.ExecuteAsync(
+            "UPDATE order_items SET outsource_book_no=NULLIF(@bno, '') WHERE order_item_id=@id",
+            new { bno = bookNo?.Trim() ?? "", id = orderItemId });
+    }
+
     public async Task UpdateBookNoAsync(int orderId, string branchKey, string? bookNo)
     {
         using var conn = _db.CreateForBranch(branchKey);
@@ -913,7 +922,8 @@ public class FactoryOrderService
                        oi.outsource_vendor AS OutsourceVendor,
                        oi.sent_to_factory_at AS SentToFactoryAt,
                        oi.factory_accepted_at AS FactoryAcceptedAt,
-                       oi.sent_to_shop_at AS SentToShopAt
+                       oi.sent_to_shop_at AS SentToShopAt,
+                       oi.outsource_book_no AS OutsourceBookNo
                 FROM order_items oi
                 LEFT JOIN products p ON oi.pro_id = p.pro_id
                 WHERE oi.order_id IN @ids
